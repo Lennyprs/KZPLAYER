@@ -126,11 +126,14 @@ class DetailActivity : BaseActivity() {
             }
         }
 
-        // v359 : focus bien visible (leger agrandissement du bouton survole).
+        // v395 : focus TRES visible (fort agrandissement + relief), sinon impossible
+        // de savoir sur quel bouton on est sur TV. Le drawable et la couleur du texte
+        // se chargent du reste (fond blanc + texte noir + curseur).
         for (b in listOf(playBtn, trailerBtn, downloadBtn)) {
             b.setOnFocusChangeListener { v, has ->
-                v.animate().scaleX(if (has) 1.06f else 1f).scaleY(if (has) 1.06f else 1f)
-                    .setDuration(120).start()
+                v.animate().scaleX(if (has) 1.14f else 1f).scaleY(if (has) 1.14f else 1f)
+                    .setDuration(110).start()
+                v.translationZ = if (has) 20f else 0f
             }
         }
         playBtn.requestFocus()

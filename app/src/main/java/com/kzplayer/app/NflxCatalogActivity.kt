@@ -223,8 +223,13 @@ abstract class NflxCatalogActivity : NtBase() {
         override fun onBindViewHolder(holder: VH, position: Int) {
             val item = data[position]
             holder.name.text = item.name
-            if (item.duration.isNotBlank()) {
-                holder.sub.text = item.duration
+            // v396 : en mode multi-listes, on affiche le nom du serveur d origine
+            // sous la tuile (dans le meme sous-texte, discrete et lisible).
+            val subParts = ArrayList<String>()
+            if (item.duration.isNotBlank()) subParts.add(item.duration)
+            if (item.serverLabel.isNotBlank()) subParts.add(item.serverLabel)
+            if (subParts.isNotEmpty()) {
+                holder.sub.text = subParts.joinToString(" \u2022 ")
                 holder.sub.visibility = View.VISIBLE
             } else holder.sub.visibility = View.GONE
             if (item.logo.isBlank()) holder.poster.setImageResource(R.drawable.ic_movie)

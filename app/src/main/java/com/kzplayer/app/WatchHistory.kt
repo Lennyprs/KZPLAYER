@@ -64,18 +64,28 @@ object WatchHistory {
     }
 
     // Lecture pour AFFICHAGE : en mode simple, on ne renvoie que les elements du
-    // serveur actif (les anciens elements sans estampille restent visibles pour ne
-    // pas casser l historique existant). En mode multi-listes : tout est visible.
+    // serveur actif. v395 : filtre STRICT (les anciens sans estampille ne sortent
+    // plus non plus, sinon ils apparaissent sur toutes les listes, ce qui n est
+    // pas ce que l utilisateur veut). En mode multi-listes : tout est visible.
     fun all(ctx: Context): List<Entry> {
         val list = readAll(ctx)
         if (MultiListPref.isAll(ctx)) return list
-        val cur = Session.current?.id ?: return list
-        return list.filter { it.playlistId.isBlank() || it.playlistId == cur }
+        val cur = Session.current?.id ?: return emptyList()
+        return list.filter { it.playlistId == cur }
     }
 
     fun recentItems(ctx: Context, browseKind: String): List<Item> {
         val wanted = if (browseKind == "series") "series" else "movie"
         val entries = all(ctx).filter { it.kind == wanted }
+        // v396 : en mode multi-listes, on affiche le nom du serveur d origine sous
+        // chaque tuile (via Item.serverLabel). En mode simple : rien de plus.
+        val multi = MultiListPref.isAll(ctx)
+        val nameOf = if (multi) {
+            val m = HashMap<String, String>()
+            for (p in Session.playlists) m[p.id] = p.nom
+            m
+        } else emptyMap()
+        fun label(plId: String): String = if (multi) nameOf[plId].orEmpty() else ""
         if (wanted == "series") {
             val map = LinkedHashMap<String, Item>()
             for (e in entries) {
@@ -88,7 +98,8 @@ object WatchHistory {
                     seriesId = e.seriesId.ifBlank { seriesTitle },
                     cmd = e.seriesCmd.ifBlank { null },
                     duration = formatProgress(e.positionMs, e.durationMs),
-                    added = e.updatedAt
+                    added = e.updatedAt,
+                    serverLabel = label(e.playlistId)
                 )
             }
             return map.values.toList()
@@ -109,7 +120,8 @@ object WatchHistory {
                 containerExt = e.sourceContainerExt.ifBlank { null },
                 cmd = e.sourceCmd.ifBlank { null },
                 duration = formatProgress(e.positionMs, e.durationMs),
-                added = e.updatedAt
+                added = e.updatedAt,
+                serverLabel = label(e.playlistId)
             )
         }
         return movieMap.values.toList()
