@@ -438,7 +438,7 @@ object Api {
     // - Compare le "v{N}" du tag au versionCode installe (fourni par SettingsActivity).
     // - Fallback best-effort sur le backend Apps Script si GitHub echoue.
     private const val GITHUB_RELEASES_URL =
-        "https://api.github.com/repos/Kozukaa/KZPLAYER/releases/latest"
+        "https://api.github.com/repos/Lennyprs/KZPLAYER/releases/latest"
 
     suspend fun checkForUpdate(license: String, currentVersion: String, currentVersionCode: Int = 0): UpdateInfo = withContext(Dispatchers.IO) {
         // 1) Essaye GitHub Releases avec un timeout court : reponse rapide garantie.

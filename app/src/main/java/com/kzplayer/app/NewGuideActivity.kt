@@ -160,6 +160,9 @@ open class NewGuideActivity : NtBase() {
     }
 
     private fun selectCategory(cat: Category) {
+        // v392 : ne rafraichir QUE l ancienne + la nouvelle categorie (pas toute la liste)
+        // -> le curseur ne remonte plus quand on choisit une categorie plus bas.
+        val prevCat = selectedCat
         selectedCat = cat.id
         // v391 : categorie issue du multiliste -> on bascule sur sa liste.
         val atSep = cat.id.indexOf("@@")
@@ -170,7 +173,10 @@ open class NewGuideActivity : NtBase() {
         }
         val src = Session.current?.nom?.takeIf { it.isNotBlank() }
         sourceTv.text = if (src != null) "$src  /  ${cat.name}" else cat.name
-        catAdapter?.notifyDataSetChanged()
+        val prevIdx = categories.indexOfFirst { it.id == prevCat }
+        val newIdx = categories.indexOfFirst { it.id == selectedCat }
+        if (prevIdx >= 0) catAdapter?.notifyItemChanged(prevIdx)
+        if (newIdx >= 0 && newIdx != prevIdx) catAdapter?.notifyItemChanged(newIdx)
         val pl = Session.current ?: return
         if (cat.id == "__favorites__") {
             channels = Favorites.forKind(this, "live")
@@ -357,13 +363,24 @@ open class NewGuideActivity : NtBase() {
     }
 
     private fun startInline(item: Item, url: String) {
+        val prevItem = playingItem
         playingItem = item
         playingUrl = url
         Session.liveChannels = channels.filter { it.kind == "live" }
         heroImg.visibility = View.INVISIBLE
         heroPlayer?.visibility = View.VISIBLE
         buildAndPlay(url)
-        chAdapter?.notifyDataSetChanged()
+        // v392 : ne rafraichit QUE l ancienne + la nouvelle chaine (garde le focus).
+        val newIdx = channels.indexOfFirst { (it.streamId ?: it.name) == (item.streamId ?: item.name) }
+        val prevIdx = if (prevItem != null) channels.indexOfFirst { (it.streamId ?: it.name) == (prevItem.streamId ?: prevItem.name) } else -1
+        if (prevIdx >= 0) chAdapter?.notifyItemChanged(prevIdx)
+        if (newIdx >= 0 && newIdx != prevIdx) chAdapter?.notifyItemChanged(newIdx)
+        // v392 : positionne la chaine en cours en haut de la liste : quand l utilisateur
+        // remonte au lecteur reduit puis redescend, le focus tombe sur la chaine active
+        // au lieu de repartir sur les premieres chaines de la categorie.
+        if (newIdx >= 0) {
+            (channelRv.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(newIdx, 0)
+        }
     }
 
     private fun buildAndPlay(u: String) {
@@ -428,7 +445,27 @@ open class NewGuideActivity : NtBase() {
 
     inner class ChannelAdapter : RecyclerView.Adapter<ChannelAdapter.VH>() {
         private val data = ArrayList<Item>()
-        fun submit(list: List<Item>) { data.clear(); data.addAll(list); notifyDataSetChanged() }
+        // v392 : pour la pagination Stalker (batches successifs) on ajoute les nouvelles
+        // lignes SANS reset : on ne perd plus le focus quand on descend dans les chaines
+        // pendant que la categorie continue de se charger.
+        fun submit(list: List<Item>) {
+            val oldSize = data.size
+            val isAppend = list.size >= oldSize &&
+                oldSize > 0 &&
+                (0 until oldSize).all { i ->
+                    val a = data[i]; val b = list[i]
+                    (a.streamId ?: a.name) == (b.streamId ?: b.name)
+                }
+            if (isAppend) {
+                val added = list.size - oldSize
+                if (added > 0) {
+                    for (i in oldSize until list.size) data.add(list[i])
+                    notifyItemRangeInserted(oldSize, added)
+                }
+            } else {
+                data.clear(); data.addAll(list); notifyDataSetChanged()
+            }
+        }
         inner class VH(val v: View) : RecyclerView.ViewHolder(v) {
             val logo: ImageView = v.findViewById(R.id.logoIv)
             val name: TextView = v.findViewById(R.id.nameTv)
@@ -463,6 +500,10 @@ open class NewGuideActivity : NtBase() {
                 holder.v.animate().scaleX(if (hasFocus) 1.01f else 1f).scaleY(if (hasFocus) 1.01f else 1f).setDuration(80).start()
                 holder.v.translationZ = if (hasFocus) 10f else 0f
             }
+            // v392 : la chaine en lecture est la cible de focus par defaut du RecyclerView
+            // -> quand on redescend depuis le lecteur reduit, on tombe sur la bonne chaine.
+            holder.v.isFocusable = true
+            holder.v.isFocusableInTouchMode = false
             val pl = Session.current ?: return
             val key = holder.boundStream
             lifecycleScope.launch {
