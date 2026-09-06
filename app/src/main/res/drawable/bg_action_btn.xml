@@ -1,19 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- v359 : bouton d action compact. Au focus : fond accent + gros contour clair,
-     donc impossible de ne pas voir ou on se trouve sur une TV. -->
+<!-- v396 : au focus le bouton devient BLANC + contour epais accent + petit curseur
+     vertical a gauche. Combine a btn_action_text.xml, le texte passe en noir. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
-        <shape android:shape="rectangle">
-            <solid android:color="?attr/kzAccent" />
-            <corners android:radius="10dp" />
-            <stroke android:width="3dp" android:color="@color/text" />
-        </shape>
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="#FFFFFFFF" />
+                    <corners android:radius="10dp" />
+                    <stroke android:width="4dp" android:color="?attr/kzAccent" />
+                </shape>
+            </item>
+            <item android:left="6dp" android:top="10dp" android:bottom="10dp" android:width="5dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="?attr/kzAccent" />
+                    <corners android:radius="3dp" />
+                </shape>
+            </item>
+        </layer-list>
     </item>
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <solid android:color="?attr/kzAccent" />
+            <solid android:color="#FFFFFFFF" />
             <corners android:radius="10dp" />
-            <stroke android:width="3dp" android:color="@color/text" />
+            <stroke android:width="4dp" android:color="?attr/kzAccent2" />
         </shape>
     </item>
     <item>
