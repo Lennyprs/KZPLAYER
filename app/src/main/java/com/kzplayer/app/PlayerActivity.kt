@@ -637,6 +637,70 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    // v394 : ZAPPING chaine en direct avec la telecommande (fleche haut/bas ou
+    // touches CHANNEL_UP/DOWN). Ne concerne QUE le direct. On lit la position
+    // courante et la liste memorisees par ZapList (categorie affichee au moment
+    // du clic sur la chaine), on avance / recule, on resout l URL (Stalker via
+    // Api.stalkerLink, sinon directUrl), puis on rebascule le player sans
+    // recreer l activite (donc pas de flash noir).
+    private var zapEnCours = false
+    private fun zapChannel(delta: Int) {
+        if (!isLiveMode) return
+        if (zapEnCours) return
+        val chans = Session.zapChannels
+        if (chans.isEmpty()) return
+        var idx = Session.zapIndex
+        if (idx < 0) idx = 0
+        val newIdx = ((idx + delta) % chans.size + chans.size) % chans.size
+        if (newIdx == idx && chans.size == 1) return
+        val next = chans[newIdx]
+        Session.zapIndex = newIdx
+        val pl = Session.current
+        // Petit toast facultatif : titre de la chaine visee, dispo sur toutes les tv.
+        try { Toast.makeText(this, next.name, Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
+        zapEnCours = true
+        val direct = next.directUrl
+        if (!direct.isNullOrBlank()) {
+            switchToLive(next, direct)
+            zapEnCours = false
+            return
+        }
+        val cmd = next.cmd
+        if (pl != null && pl.type == "stalker" && !cmd.isNullOrBlank()) {
+            lifecycleScope.launch {
+                val link = try { Api.stalkerLink(pl, cmd, "live") } catch (e: Exception) { null }
+                if (!link.isNullOrBlank()) switchToLive(next, link)
+                zapEnCours = false
+            }
+        } else {
+            zapEnCours = false
+        }
+    }
+
+    private fun switchToLive(item: Item, url: String) {
+        val p = player ?: return
+        watchUrl = url
+        watchTitle = item.name
+        if (item.logo.isNotBlank()) watchLogo = item.logo
+        findViewById<TextView>(R.id.titleTv).text = item.name
+        // Reset des watchdogs de reconnexion pour la nouvelle chaine.
+        candidates = buildCandidates(url)
+        candIdx = 0
+        workingCandIdx = -1
+        liveRetries = 0
+        demarrageOk = false
+        demarrageEssais = 0
+        recoveryHandler.removeCallbacks(startupWatchdog)
+        recoveryHandler.removeCallbacks(stallWatchdog)
+        recoveryHandler.removeCallbacks(frozenImageWatchdog)
+        playCurrent()
+        showTopBarTemporarily()
+        recoveryHandler.postDelayed(startupWatchdog, 9000)
+        lastFramesTs = SystemClock.elapsedRealtime()
+        recoveryHandler.postDelayed(frozenImageWatchdog, 4000)
+        recoveryHandler.postDelayed(stallWatchdog, 2000)
+    }
+
     // Bascule le lecteur en cours sur un nouveau flux VOD (episode suivant) sans recreer l'activite.
     private fun switchToVod(url: String, title: String, logo: String) {
         val p = player ?: return
@@ -925,6 +989,11 @@ class PlayerActivity : AppCompatActivity() {
                 showTopBarTemporarily()
                 when (event.keyCode) {
                     KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> return super.dispatchKeyEvent(event)
+                    // v394 : ZAPPING chaine. Fleche haut/bas = chaine precedente/suivante
+                    // dans la categorie affichee au moment du clic. Idem pour les touches
+                    // dediees CHANNEL_UP/DOWN des telecommandes IPTV.
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> { zapChannel(-1); return true }
+                    KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> { zapChannel(+1); return true }
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,

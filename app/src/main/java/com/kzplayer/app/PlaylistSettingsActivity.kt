@@ -146,6 +146,9 @@ class PlaylistSettingsActivity : BaseActivity() {
             val healthTxt = PlaylistHealth.label(this, pl.id)
             if (healthTxt.isNotBlank()) {
                 val stTv = TextView(this)
+                // v393b : tag OBLIGATOIRE pour que updateHealthLabelInPlace() retrouve
+                // ce TextView et le MODIFIE au lieu d en creer un 2e (doublon).
+                stTv.tag = "__health__"
                 stTv.text = healthTxt
                 stTv.setTextColor(if (PlaylistHealth.isProblem(this, pl.id)) 0xFFFF6B6B.toInt() else 0xFF4CD07D.toInt())
                 stTv.textSize = 12f

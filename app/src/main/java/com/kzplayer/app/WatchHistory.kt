@@ -23,12 +23,16 @@ object WatchHistory {
         val seriesCmd: String = "",
         val sourceCmd: String = "",
         val sourceStreamId: String = "",
-        val sourceContainerExt: String = ""
+        val sourceContainerExt: String = "",
+        // v394 : id du serveur (liste) sur lequel cet element a ete lu.
+        // En mode simple, on ne montre que les elements du serveur actif.
+        val playlistId: String = ""
     )
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
 
-    fun all(ctx: Context): List<Entry> {
+    // v394 : lecture BRUTE (sans filtrage par serveur). Reservee aux ecritures.
+    private fun readAll(ctx: Context): List<Entry> {
         val raw = prefs(ctx).getString(KEY, "[]") ?: "[]"
         val arr = try { JSONArray(raw) } catch (e: Exception) { JSONArray() }
         val out = ArrayList<Entry>()
@@ -51,11 +55,22 @@ object WatchHistory {
                     seriesCmd = o.optString("seriesCmd"),
                     sourceCmd = o.optString("sourceCmd"),
                     sourceStreamId = o.optString("sourceStreamId"),
-                    sourceContainerExt = o.optString("sourceContainerExt")
+                    sourceContainerExt = o.optString("sourceContainerExt"),
+                    playlistId = o.optString("playlistId")
                 )
             )
         }
         return out.sortedByDescending { it.updatedAt }
+    }
+
+    // Lecture pour AFFICHAGE : en mode simple, on ne renvoie que les elements du
+    // serveur actif (les anciens elements sans estampille restent visibles pour ne
+    // pas casser l historique existant). En mode multi-listes : tout est visible.
+    fun all(ctx: Context): List<Entry> {
+        val list = readAll(ctx)
+        if (MultiListPref.isAll(ctx)) return list
+        val cur = Session.current?.id ?: return list
+        return list.filter { it.playlistId.isBlank() || it.playlistId == cur }
     }
 
     fun recentItems(ctx: Context, browseKind: String): List<Item> {
@@ -166,7 +181,9 @@ object WatchHistory {
         sourceStreamId: String = "",
         sourceContainerExt: String = ""
     ) {
-        val prev = all(ctx).firstOrNull { it.url == url || (it.kind == kind && it.title == title) }
+        // v394 : les operations d ecriture regardent TOUTES les entrees pour ne pas
+        // dupliquer un element existant sur un autre serveur.
+        val prev = readAll(ctx).firstOrNull { it.url == url || (it.kind == kind && it.title == title) }
         save(
             ctx,
             url,
@@ -203,8 +220,10 @@ object WatchHistory {
     ) {
         if (url.isBlank() || title.isBlank()) return
         val now = System.currentTimeMillis()
-        val existing = all(ctx).filter { it.url != url && !(it.kind == kind && it.title == title) }.toMutableList()
-        existing.add(0, Entry(url, title, logo, kind, positionMs.coerceAtLeast(0L), durationMs.coerceAtLeast(0L), now, seriesName, seriesLogo, seriesId, seriesCmd, sourceCmd, sourceStreamId, sourceContainerExt))
+        // v394 : on estampille l entree avec la liste active au moment de la lecture.
+        val plId = Session.current?.id ?: ""
+        val existing = readAll(ctx).filter { it.url != url && !(it.kind == kind && it.title == title) }.toMutableList()
+        existing.add(0, Entry(url, title, logo, kind, positionMs.coerceAtLeast(0L), durationMs.coerceAtLeast(0L), now, seriesName, seriesLogo, seriesId, seriesCmd, sourceCmd, sourceStreamId, sourceContainerExt, plId))
         val arr = JSONArray()
         for (e in existing.take(MAX_ITEMS)) {
             arr.put(JSONObject().apply {
@@ -222,6 +241,7 @@ object WatchHistory {
                 put("sourceCmd", e.sourceCmd)
                 put("sourceStreamId", e.sourceStreamId)
                 put("sourceContainerExt", e.sourceContainerExt)
+                put("playlistId", e.playlistId)
             })
         }
         prefs(ctx).edit().putString(KEY, arr.toString()).apply()
