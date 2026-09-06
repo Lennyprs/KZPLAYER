@@ -16,6 +16,16 @@ jobs:
       - name: Checkout du code
         uses: actions/checkout@v4
 
+      # v392 : GitHub Actions ne supporte pas l arithmetique dans les expressions
+      # ${{ ... }}. On calcule VERSION_CODE = run_number + 400 dans un step shell
+      # et on l expose via $GITHUB_ENV pour les steps suivants (build + release).
+      - name: Calculer la version (run_number + 400)
+        run: |
+          VC=$((GITHUB_RUN_NUMBER + 400))
+          echo "VERSION_CODE=$VC" >> $GITHUB_ENV
+          echo "VERSION_TAG=v$VC" >> $GITHUB_ENV
+          echo "Version calculee : versionCode=$VC tag=v$VC"
+
       - name: Installer Java 17
         uses: actions/setup-java@v4
         with:
@@ -46,9 +56,10 @@ jobs:
 
       - name: Build release (APK non signe)
         env:
-          # v392 : force VERSION_CODE = run_number + 400 pour rester au-dessus des
-          # anciens builds Kozukaa (391-392). Doit correspondre au tag ci-dessous.
-          VERSION_CODE: ${{ github.run_number }}
+          # v392 : VERSION_CODE = run_number + 400 calcule au step precedent.
+          # Le fichier app/build.gradle lit cette variable et l applique tel quel
+          # (sans re-additionner) pour matcher le tag de release ci-dessous.
+          VERSION_CODE: ${{ env.VERSION_CODE }}
         run: ./gradlew clean :app:assembleRelease --no-daemon --stacktrace
 
       - name: Decoder le keystore
@@ -82,11 +93,12 @@ jobs:
       - name: Creer la Release GitHub avec l'APK
         uses: softprops/action-gh-release@v2
         with:
-          # v392 : tag = run_number + 400 pour rester au-dessus des anciens builds
-          # Kozukaa (jusqu a v391). Ainsi l auto-update dans l app (qui compare le
-          # tag "vN" au versionCode installe) voit bien les nouvelles versions.
-          tag_name: v${{ github.run_number + 400 }}
-          name: KZ Player v${{ github.run_number + 400 }}
+          # v392 : tag = run_number + 400 (calcule au step "Calculer la version").
+          # Reste au-dessus des anciens builds Kozukaa (jusqu a v391) : l auto-update
+          # dans l app compare le tag "vN" au versionCode installe -> les nouvelles
+          # versions sont bien detectees.
+          tag_name: ${{ env.VERSION_TAG }}
+          name: KZ Player ${{ env.VERSION_TAG }}
           files: app-release-signed.apk
           draft: false
           prerelease: false

@@ -11,13 +11,22 @@ android {
         applicationId "com.kzplayer.app"
         minSdk 21
         targetSdk 34
-        // v392 : decalage +400 pour que le versionCode des builds du nouveau depot
-        // Lennyprs/KZPLAYER reste SUPERIEUR aux anciens builds Kozukaa (qui allaient
-        // jusqu a 391-392). Sinon l auto-update dans l app dit "deja a jour" parce
-        // que le run_number GitHub Actions repart a 1 sur le nouveau depot.
-        def vcRaw = System.getenv("VERSION_CODE") ?: System.getenv("GITHUB_RUN_NUMBER") ?: "1"
-        def vcBase = vcRaw.isInteger() ? vcRaw.toInteger() : 1
-        versionCode vcBase + 400
+        // v392 : decalage +400 pour rester au-dessus des anciens builds Kozukaa
+        // (qui allaient jusqu a 391-392). Sinon l auto-update dans l app dit "deja
+        // a jour" parce que GITHUB_RUN_NUMBER repart a 1 sur le nouveau depot Lennyprs.
+        // - Si VERSION_CODE est fourni par le workflow, on le prend tel quel (deja
+        //   calcule = run_number + 400). Cela evite un double decalage.
+        // - Sinon (fallback local), on part de GITHUB_RUN_NUMBER et on ajoute +400.
+        def vcEnv = System.getenv("VERSION_CODE")
+        def vcCode
+        if (vcEnv != null && vcEnv.isInteger()) {
+            vcCode = vcEnv.toInteger()
+        } else {
+            def runRaw = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
+            def runNum = runRaw.isInteger() ? runRaw.toInteger() : 1
+            vcCode = runNum + 400
+        }
+        versionCode vcCode
         versionName "3.2.2"
     }
 
