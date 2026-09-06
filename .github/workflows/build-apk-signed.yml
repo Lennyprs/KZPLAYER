@@ -45,6 +45,10 @@ jobs:
           ls -l ./gradlew gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
 
       - name: Build release (APK non signe)
+        env:
+          # v392 : force VERSION_CODE = run_number + 400 pour rester au-dessus des
+          # anciens builds Kozukaa (391-392). Doit correspondre au tag ci-dessous.
+          VERSION_CODE: ${{ github.run_number }}
         run: ./gradlew clean :app:assembleRelease --no-daemon --stacktrace
 
       - name: Decoder le keystore
@@ -78,8 +82,11 @@ jobs:
       - name: Creer la Release GitHub avec l'APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: KZ Player v${{ github.run_number }}
+          # v392 : tag = run_number + 400 pour rester au-dessus des anciens builds
+          # Kozukaa (jusqu a v391). Ainsi l auto-update dans l app (qui compare le
+          # tag "vN" au versionCode installe) voit bien les nouvelles versions.
+          tag_name: v${{ github.run_number + 400 }}
+          name: KZ Player v${{ github.run_number + 400 }}
           files: app-release-signed.apk
           draft: false
           prerelease: false
