@@ -4,7 +4,9 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="?attr/kzBg"
-    android:padding="40dp">
+    android:padding="40dp"
+    android:clipChildren="false"
+    android:clipToPadding="false">
     <TextView
         android:id="@+id/backBtn"
         android:layout_width="wrap_content"

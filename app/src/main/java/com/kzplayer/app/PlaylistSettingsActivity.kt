@@ -15,6 +15,11 @@ import kotlinx.coroutines.launch
 
 // Sous-menu Parametres : choix de la liste de lecture (serveur actif). Marche sur les 2 themes.
 class PlaylistSettingsActivity : BaseActivity() {
+
+    // v393 : signature de la liste actuellement affichee (ids + id de la liste active).
+    // Sert a eviter les renderPlaylists() inutiles dans onResume() qui remontent le focus.
+    private var renderedSignature: String = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_playlist_settings)
@@ -42,10 +47,42 @@ class PlaylistSettingsActivity : BaseActivity() {
         }
     }
 
+    // v393 : effet de focus DOUX pour les lignes pleine largeur.
+    // Le scale 1.07 du FocusFx generique fait sortir le texte de l ecran ("coupe")
+    // sur des lignes MATCH_PARENT. On utilise 1.02 + un leger relief translationZ.
+    private fun applySoftFocus(v: View) {
+        v.isFocusable = true
+        v.isClickable = true
+        v.setOnFocusChangeListener { view, hasFocus ->
+            view.animate()
+                .scaleX(if (hasFocus) 1.02f else 1f)
+                .scaleY(if (hasFocus) 1.02f else 1f)
+                .setDuration(90).start()
+            view.translationZ = if (hasFocus) 12f else 0f
+        }
+    }
+
+    // v393 : signature stable de l etat visible pour eviter les rebuild inutiles.
+    private fun computeSignature(): String {
+        val cur = Session.current?.id ?: ""
+        val ids = Session.playlists.joinToString("|") {
+            it.id + ":" + PlaylistHealth.label(this, it.id)
+        }
+        return "cur=$cur;" + ids
+    }
+
     // Construit la liste cliquable des serveurs. La liste active est marquee d'un point.
     private fun renderPlaylists() {
         val container = findViewById<LinearLayout>(R.id.playlistContainer) ?: return
+
+        // v393 : memorise le tag de la vue actuellement focalisee avant le rebuild,
+        // pour restaurer le focus au bon endroit apres removeAllViews().
+        val prevFocusTag = (currentFocus?.tag as? String)
+
         container.removeAllViews()
+        // v393 : indispensable pour que le scale de focus deborde sans etre coupe.
+        container.clipChildren = false
+        container.clipToPadding = false
         val d = resources.displayMetrics.density
         val pad = (16 * d).toInt()
         val mb = (10 * d).toInt()
@@ -63,11 +100,11 @@ class PlaylistSettingsActivity : BaseActivity() {
         )
         alp.bottomMargin = mb
         addBtn.layoutParams = alp
-        addBtn.isClickable = true
-        addBtn.isFocusable = true
+        addBtn.tag = "__add__"
         addBtn.setOnClickListener { startActivity(Intent(this, AddPlaylistActivity::class.java)) }
         container.addView(addBtn)
-        FocusFx.apply(addBtn)
+        // v393 : scale reduit pour ne PAS couper le texte du bouton.
+        applySoftFocus(addBtn)
 
         if (Session.playlists.isEmpty()) {
             val tv = TextView(this)
@@ -75,6 +112,7 @@ class PlaylistSettingsActivity : BaseActivity() {
             tv.setTextColor(ContextCompat.getColor(this, R.color.muted))
             tv.textSize = 14f
             container.addView(tv)
+            renderedSignature = computeSignature()
             return
         }
         for (pl in Session.playlists) {
@@ -88,8 +126,8 @@ class PlaylistSettingsActivity : BaseActivity() {
             )
             lp.bottomMargin = mb
             row.layoutParams = lp
-            row.isClickable = true
-            row.isFocusable = true
+            // v393 : tag stable pour retrouver la ligne apres rebuild.
+            row.tag = "pl:" + pl.id
 
             val name = TextView(this)
             name.text = pl.nom + if (pl.id == Session.current?.id) "   \u25CF" else ""
@@ -124,14 +162,31 @@ class PlaylistSettingsActivity : BaseActivity() {
                     Session.playlists = Session.playlists.filter { it.id != pl.id }
                     if (Session.current?.id == pl.id) Session.current = Session.playlists.firstOrNull()
                     Toast.makeText(this, "Liste supprim\u00e9e", Toast.LENGTH_SHORT).show()
+                    // v393 : ici on doit reellement rebuild puisque la liste a change.
+                    renderedSignature = ""
                     renderPlaylists()
                     true
                 }
             }
-            FocusFx.apply(row)
+            // v393 : scale reduit pour ne PAS couper le nom des listes.
+            applySoftFocus(row)
 
             row.setOnClickListener { selectPlaylist(pl) }
             container.addView(row)
+        }
+
+        renderedSignature = computeSignature()
+
+        // v393 : restauration du focus apres rebuild : evite que le curseur remonte
+        // sur le bouton "Ajouter" quand un checkHealth() se termine pendant que
+        // l utilisateur navigue plus bas dans la liste.
+        if (!prevFocusTag.isNullOrBlank()) {
+            container.post {
+                for (i in 0 until container.childCount) {
+                    val v = container.getChildAt(i)
+                    if (v.tag == prevFocusTag) { v.requestFocus(); break }
+                }
+            }
         }
     }
 
@@ -151,11 +206,17 @@ class PlaylistSettingsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
-        renderPlaylists()
+        // v393 : ne rebuild QUE si l etat visible a change (listes ajoutees/supprimees
+        // ou label sante different). Evite que le retour depuis AddPlaylistActivity
+        // remette le focus en haut.
+        if (renderedSignature != computeSignature()) renderPlaylists()
     }
 
     // v391 : verifie chaque liste (expiree / hors service), le signale dans l app
     // et l envoie au panel utilisateur.
+    // v393 : NE rebuild PLUS toute la vue apres CHAQUE health check (c est ce qui
+    // ramenait le curseur sur le bouton "Ajouter" quand on descendait). A la place,
+    // on met a jour uniquement le label d etat de la ligne concernee.
     private fun checkHealth() {
         val lic = DeviceIdentity.licenseCode(this)
         for (pl in Session.playlists.toList()) {
@@ -172,8 +233,46 @@ class PlaylistSettingsActivity : BaseActivity() {
                         ).show()
                     }
                 }
-                renderPlaylists()
+                // v393 : met a jour SEULEMENT le label d etat de la ligne concernee
+                // pour ne pas reconstruire toute la vue (et ne pas voler le focus).
+                updateHealthLabelInPlace(pl.id)
             }
+        }
+    }
+
+    // v393 : ajoute / met a jour le petit label "Actif / Hors service / ..." dans la
+    // ligne d une playlist, sans rebuild global. Silencieux si la ligne n existe pas.
+    private fun updateHealthLabelInPlace(playlistId: String) {
+        val container = findViewById<LinearLayout>(R.id.playlistContainer) ?: return
+        val tag = "pl:$playlistId"
+        for (i in 0 until container.childCount) {
+            val v = container.getChildAt(i)
+            if (v.tag != tag || v !is LinearLayout) continue
+            val healthTxt = PlaylistHealth.label(this, playlistId)
+            val problem = PlaylistHealth.isProblem(this, playlistId)
+            // On cherche un TextView de sante existant (3e enfant si present : name/sub/health).
+            var healthTv: TextView? = null
+            for (j in 0 until v.childCount) {
+                val c = v.getChildAt(j)
+                if (c is TextView && c.tag == "__health__") { healthTv = c; break }
+            }
+            if (healthTxt.isBlank()) {
+                if (healthTv != null) v.removeView(healthTv)
+            } else {
+                if (healthTv == null) {
+                    healthTv = TextView(this)
+                    healthTv.tag = "__health__"
+                    healthTv.textSize = 12f
+                    // Insere apres name+sub (index 2), avant l eventuel label "local".
+                    val insertAt = if (v.childCount >= 2) 2 else v.childCount
+                    v.addView(healthTv, insertAt)
+                }
+                healthTv.text = healthTxt
+                healthTv.setTextColor(if (problem) 0xFFFF6B6B.toInt() else 0xFF4CD07D.toInt())
+            }
+            // Rafraichit aussi la signature memorisee pour eviter un rebuild inutile en onResume.
+            renderedSignature = computeSignature()
+            break
         }
     }
 }
