@@ -6,6 +6,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -82,6 +83,29 @@ class ReplayProgramsActivity : BaseActivity() {
         }
     }
 
+    // v398 : telechargement du replay Xtream dans Parametres > Telechargements.
+    private fun downloadProg(p: ReplayApi.Prog) {
+        val pl = Session.current ?: return
+        if (pl.type != "xtream") {
+            Toast.makeText(this, "Le telechargement Replay est disponible pour Xtream.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "Preparation du replay...", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val url = try { ReplayApi.archiveDownloadUrl(pl, streamId, chCmd, p) } catch (_: Exception) { "" }
+            if (url.isBlank()) {
+                Toast.makeText(this@ReplayProgramsActivity,
+                    "Ce serveur ne fournit pas ce replay dans un format telechargeable.",
+                    Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val title = listOf(p.title, chName, p.time).filter { it.isNotBlank() }.joinToString(" - ")
+            Toast.makeText(this@ReplayProgramsActivity,
+                Downloads.enqueue(this@ReplayProgramsActivity, title, url),
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun openPlayer(p: ReplayApi.Prog, url: String) {
         startActivity(
             Intent(this, PlayerActivity::class.java)
@@ -98,6 +122,7 @@ class ReplayProgramsActivity : BaseActivity() {
             val time: TextView = v.findViewById(R.id.progTime)
             val title: TextView = v.findViewById(R.id.progTitle)
             val desc: TextView = v.findViewById(R.id.progDesc)
+            val download: TextView = v.findViewById(R.id.replayDownloadBtn)
         }
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
             VH(LayoutInflater.from(parent.context).inflate(R.layout.item_replay_prog, parent, false))
@@ -109,6 +134,11 @@ class ReplayProgramsActivity : BaseActivity() {
             if (p.desc.isBlank()) holder.desc.visibility = View.GONE
             else { holder.desc.visibility = View.VISIBLE; holder.desc.text = p.desc }
             holder.v.setOnClickListener { playProg(p) }
+            holder.download.setOnClickListener { downloadProg(p) }
+            holder.download.setOnFocusChangeListener { view, has ->
+                val scale = if (has) 1.08f else 1f
+                view.animate().scaleX(scale).scaleY(scale).setDuration(110).start()
+            }
             holder.v.setOnFocusChangeListener { view, has ->
                 val s = if (has) 1.02f else 1f
                 view.animate().scaleX(s).scaleY(s).setDuration(110).start()

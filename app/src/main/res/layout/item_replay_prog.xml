@@ -29,6 +29,23 @@
         android:textStyle="bold" />
 
     <TextView
+        android:id="@+id/replayDownloadBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_action_btn"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:minWidth="150dp"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:text="Télécharger"
+        android:textColor="@color/btn_action_text"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
         android:id="@+id/progDesc"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
