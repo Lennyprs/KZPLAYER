@@ -42,17 +42,21 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val fic = intent?.getStringExtra("file").orEmpty()
         val url = intent?.getStringExtra("url").orEmpty()
+        val urls = intent?.getStringArrayListExtra("urls")?.filter { it.isNotBlank() }
+            ?: listOf(url).filter { it.isNotBlank() }
         val titre = intent?.getStringExtra("title").orEmpty()
         val cmd = intent?.getStringExtra("cmd").orEmpty()
-        if (fic.isNotBlank() && url.isNotBlank()) {
+        if (fic.isNotBlank() && urls.isNotEmpty()) {
             annules.remove(fic)
             val p = jobs[fic]
             if (p == null) {
-                jobs[fic] = Prog(fic, titre.ifBlank { fic }, 0L, 0L, ST_PENDING, url, cmd)
+                jobs[fic] = Prog(fic, titre.ifBlank { fic }, 0L, 0L, ST_PENDING, urls.first(), cmd, urls)
                 pool.execute { travailler(fic) }
             } else {
                 // Deja connu : on remet a jour le lien et on relance si besoin.
-                p.url = url
+                p.urls = urls
+                p.urlIndex = 0
+                p.url = urls.first()
                 if (cmd.isNotBlank()) p.cmd = cmd
                 if (p.status != ST_RUNNING) {
                     p.status = ST_PENDING
@@ -152,15 +156,33 @@ class DownloadService : Service() {
                     return
                 }
                 if (code == 401 || code == 403 || code == 404 || code == 410 || code >= 500) {
+                    p.lastError = "HTTP " + code
                     rep.close()
-                    // Jeton expire cote serveur : on refabrique un lien tout neuf.
-                    if (!rafraichirLien(p)) {
-                        p.status = ST_PAUSED
-                        majNotif()
-                        dormir(5000L)
+                    if (p.nextUrl()) {
+                        try { f.delete() } catch (_: Throwable) {}
                         continue
                     }
+                    // Jeton expire cote serveur : on refabrique un lien tout neuf.
+                    if (!rafraichirLien(p)) {
+                        p.status = ST_FAILED
+                        majNotif()
+                        finirSiPlusRien()
+                        return
+                    }
                     continue
+                }
+                val contentType = (rep.header("Content-Type") ?: "").lowercase()
+                if (contentType.contains("text/html") || contentType.contains("json") || contentType.contains("xml")) {
+                    p.lastError = "Reponse non video : " + contentType
+                    rep.close()
+                    if (p.nextUrl()) {
+                        try { f.delete() } catch (_: Throwable) {}
+                        continue
+                    }
+                    p.status = ST_FAILED
+                    majNotif()
+                    finirSiPlusRien()
+                    return
                 }
                 val corps = rep.body
                 if (corps == null) { rep.close(); p.status = ST_PAUSED; dormir(3000L); continue }
@@ -254,8 +276,22 @@ class DownloadService : Service() {
             @Volatile var total: Long,
             @Volatile var status: Int,
             @Volatile var url: String,
-            @Volatile var cmd: String
-        )
+            @Volatile var cmd: String,
+            @Volatile var urls: List<String> = listOf(url),
+            @Volatile var urlIndex: Int = 0,
+            @Volatile var lastError: String = ""
+        ) {
+            @Synchronized fun nextUrl(): Boolean {
+                val next = urlIndex + 1
+                if (next >= urls.size) return false
+                urlIndex = next
+                url = urls[next]
+                done = 0L
+                total = 0L
+                status = ST_PENDING
+                return true
+            }
+        }
 
         val jobs = ConcurrentHashMap<String, Prog>()
         private val annules = java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
@@ -274,21 +310,41 @@ class DownloadService : Service() {
                 .build()
         }
 
-        fun demarrer(ctx: Context, fileName: String, title: String, url: String, cmd: String): Boolean {
+        @Volatile var lastStartError: String = ""
+
+        fun demarrer(ctx: Context, fileName: String, title: String, urls: List<String>, cmd: String): Boolean {
+            val usable = urls.filter { it.isNotBlank() }.distinct()
+            if (usable.isEmpty()) { lastStartError = "aucune URL"; return false }
             annules.remove(fileName)
-            jobs[fileName] = Prog(fileName, title.ifBlank { fileName }, 0L, 0L, ST_PENDING, url, cmd)
+            jobs[fileName] = Prog(
+                fileName, title.ifBlank { fileName }, 0L, 0L, ST_PENDING,
+                usable.first(), cmd, usable
+            )
             val i = Intent(ctx, DownloadService::class.java)
-                .putExtra("file", fileName).putExtra("title", title).putExtra("url", url).putExtra("cmd", cmd)
-            var started = false
-            try {
+                .putExtra("file", fileName)
+                .putExtra("title", title)
+                .putExtra("url", usable.first())
+                .putStringArrayListExtra("urls", ArrayList(usable))
+                .putExtra("cmd", cmd)
+            lastStartError = ""
+            return try {
                 if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
-                started = true
+                true
             } catch (e: Throwable) {
-                try { ctx.startService(i); started = true } catch (e2: Throwable) {}
+                lastStartError = e.javaClass.simpleName + ": " + (e.message ?: "")
+                try {
+                    ctx.startService(i)
+                    true
+                } catch (e2: Throwable) {
+                    lastStartError += " / " + e2.javaClass.simpleName + ": " + (e2.message ?: "")
+                    jobs.remove(fileName)
+                    false
+                }
             }
-            if (!started) jobs.remove(fileName)
-            return started
         }
+
+        fun demarrer(ctx: Context, fileName: String, title: String, url: String, cmd: String): Boolean =
+            demarrer(ctx, fileName, title, listOf(url), cmd)
 
         fun annuler(fileName: String) {
             annules.add(fileName)

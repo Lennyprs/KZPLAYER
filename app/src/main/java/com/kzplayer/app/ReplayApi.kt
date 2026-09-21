@@ -242,17 +242,37 @@ object ReplayApi {
             ""
         }
 
-    /** v404 : URL TS directe sans test Range prealable. */
+    /**
+     * v406 : candidats de telechargement construits immediatement, sans requete
+     * reseau avant la creation de la tache. Le telechargeur les essaie dans
+     * l ordre et passe automatiquement au suivant si un serveur refuse un format.
+     */
+    fun archiveDownloadUrls(pl: Playlist, streamId: String, p: Prog): List<String> {
+        if (pl.type != "xtream" || streamId.isBlank()) return emptyList()
+        val srv = pl.serverUrl.trimEnd(chr47())
+        val u = enc(pl.username)
+        val w = enc(pl.password)
+        val dur = durationMin(p)
+        val key = pl.serverUrl + "|" + pl.username
+        val cachedOffset = srvOffset[key] ?: 0L
+        val stamp = try {
+            val f = SimpleDateFormat("yyyy-MM-dd:HH-mm", Locale.US)
+            f.timeZone = java.util.TimeZone.getTimeZone("GMT")
+            f.format(Date(p.startMs + cachedOffset))
+        } catch (_: Exception) { "" }
+        if (stamp.isBlank()) return emptyList()
+        return listOf(
+            srv + "/timeshift/" + u + "/" + w + "/" + dur + "/" + stamp + "/" + streamId + ".ts",
+            srv + "/streaming/timeshift.php?username=" + u + "&password=" + w +
+                "&stream=" + enc(streamId) + "&start=" + enc(stamp) + "&duration=" + dur,
+            srv + "/timeshift.php?username=" + u + "&password=" + w +
+                "&stream=" + enc(streamId) + "&start=" + enc(stamp) + "&duration=" + dur,
+            srv + "/timeshift/" + u + "/" + w + "/" + dur + "/" + stamp + "/" + streamId
+        ).distinct()
+    }
+
     suspend fun archiveDownloadUrl(pl: Playlist, streamId: String, cmd: String, p: Prog): String =
-        withContext(Dispatchers.IO) {
-            if (pl.type != "xtream" || streamId.isBlank()) return@withContext ""
-            val candidates = archiveCandidates(pl, streamId, cmd, p)
-            candidates.firstOrNull { it.substringBefore('?').endsWith(".ts", ignoreCase = true) }
-                ?: candidates.firstOrNull { u ->
-                    val x = u.lowercase(Locale.US)
-                    !x.contains(".m3u8") && !x.contains("type=m3u8")
-                }.orEmpty()
-        }
+        withContext(Dispatchers.IO) { archiveDownloadUrls(pl, streamId, p).firstOrNull().orEmpty() }
 
     // Toutes les URL d archive connues pour ce serveur / ce programme.
     private suspend fun archiveCandidates(pl: Playlist, streamId: String, cmd: String, p: Prog): List<String> {

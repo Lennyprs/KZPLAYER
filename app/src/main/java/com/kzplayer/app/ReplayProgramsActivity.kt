@@ -95,18 +95,14 @@ class ReplayProgramsActivity : BaseActivity() {
         msgTv.text = "Preparation du telechargement..."
         Toast.makeText(this, "Preparation du replay...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
-            val url = try { ReplayApi.archiveDownloadUrl(pl, streamId, chCmd, p) } catch (_: Exception) { "" }
-            if (url.isBlank()) {
-                Toast.makeText(this@ReplayProgramsActivity,
-                    "Ce serveur ne fournit pas ce replay dans un format telechargeable.",
-                    Toast.LENGTH_LONG).show()
-                return@launch
-            }
+            // v406 : aucune sonde reseau avant d ajouter la tache. Elle apparait
+            // immediatement, puis le moteur essaie plusieurs URL Xtream tout seul.
+            val urls = try { ReplayApi.archiveDownloadUrls(pl, streamId, p) } catch (_: Throwable) { emptyList() }
             val title = listOf(p.title, chName, p.time).filter { it.isNotBlank() }.joinToString(" - ")
-            val result = Downloads.enqueueInternal(this@ReplayProgramsActivity, title, url)
-            msgTv.text = result
-            Toast.makeText(this@ReplayProgramsActivity, result, Toast.LENGTH_LONG).show()
-            if (result.startsWith("T\u00e9l\u00e9chargement lanc\u00e9")) {
+            val result = Downloads.enqueueInternalResult(this@ReplayProgramsActivity, title, urls)
+            msgTv.text = result.message
+            Toast.makeText(this@ReplayProgramsActivity, result.message, Toast.LENGTH_LONG).show()
+            if (result.started) {
                 startActivity(Intent(this@ReplayProgramsActivity, DownloadsActivity::class.java))
             }
         }

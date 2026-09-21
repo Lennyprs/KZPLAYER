@@ -265,17 +265,32 @@ object Downloads {
     // Renvoie le message a afficher a l utilisateur.
     // cmd : commande du serveur (Stalker) qui permet de refabriquer un lien frais
     // si le jeton expire pendant le telechargement.
-    fun enqueueInternal(ctx: Context, title: String, url: String, cmd: String = ""): String {
-        if (url.isBlank()) return "Lien de telechargement introuvable."
-        if (url.contains(".m3u8", true)) return "Format HLS non telechargeable sur ce serveur."
+    data class EnqueueResult(val started: Boolean, val message: String)
+
+    fun enqueueInternalResult(
+        ctx: Context,
+        title: String,
+        urls: List<String>,
+        cmd: String = ""
+    ): EnqueueResult {
+        val usable = urls.map { it.trim() }.filter { it.isNotBlank() && !it.contains(".m3u8", true) }.distinct()
+        if (usable.isEmpty()) return EnqueueResult(false, "Aucun lien de telechargement direct trouve.")
         return try {
-            val name = safeName(title, url)
-            rememberSource(ctx, name, if (title.isBlank()) name else title, url, cmd)
-            val started = DownloadService.demarrer(ctx.applicationContext, name, if (title.isBlank()) name else title, url, cmd)
-            if (started) "T\u00e9l\u00e9chargement lanc\u00e9 : " + name
-            else "Impossible de demarrer le service de telechargement."
-        } catch (e: Exception) { "Telechargement impossible : " + (e.message ?: "erreur") }
+            val name = safeName(title, usable.first())
+            val shownTitle = if (title.isBlank()) name else title
+            rememberSource(ctx, name, shownTitle, usable.first(), cmd)
+            val started = DownloadService.demarrer(
+                ctx.applicationContext, name, shownTitle, usable, cmd
+            )
+            if (started) EnqueueResult(true, "Telechargement lance : " + name)
+            else EnqueueResult(false, "Demarrage impossible : " + DownloadService.lastStartError.ifBlank { "service refuse par Android" })
+        } catch (e: Throwable) {
+            EnqueueResult(false, "Telechargement impossible : " + (e.message ?: e.javaClass.simpleName))
+        }
     }
+
+    fun enqueueInternal(ctx: Context, title: String, url: String, cmd: String = ""): String =
+        enqueueInternalResult(ctx, title, listOf(url), cmd).message
 
     fun enqueue(ctx: Context, title: String, url: String, cmd: String = ""): String {
         if (url.isBlank()) return "Lien de t\u00e9l\u00e9chargement introuvable."
