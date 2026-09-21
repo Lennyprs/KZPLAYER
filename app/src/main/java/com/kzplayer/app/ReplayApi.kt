@@ -242,22 +242,16 @@ object ReplayApi {
             ""
         }
 
-    /** v398 : resout une archive TS/video directe, jamais une playlist HLS. */
+    /** v402 : URL TS directe sans test Range prealable. */
     suspend fun archiveDownloadUrl(pl: Playlist, streamId: String, cmd: String, p: Prog): String =
         withContext(Dispatchers.IO) {
             if (pl.type != "xtream" || streamId.isBlank()) return@withContext ""
-            val candidates = archiveCandidates(pl, streamId, cmd, p).filterNot { u ->
-                val x = u.lowercase(Locale.US)
-                x.contains(".m3u8") || x.contains("type=m3u8")
-            }
-            if (candidates.isEmpty()) return@withContext ""
-            val results = coroutineScope {
-                candidates.map { u -> async(Dispatchers.IO) { Pair(u, probe(u, p.startMs)) } }
-                    .map { it.await() }
-            }
-            results.firstOrNull { pair ->
-                pair.second.ok && !pair.second.mime.contains("mpegurl", ignoreCase = true)
-            }?.first.orEmpty()
+            val candidates = archiveCandidates(pl, streamId, cmd, p)
+            candidates.firstOrNull { it.substringBefore('?').endsWith(".ts", ignoreCase = true) }
+                ?: candidates.firstOrNull { u ->
+                    val x = u.lowercase(Locale.US)
+                    !x.contains(".m3u8") && !x.contains("type=m3u8")
+                }.orEmpty()
         }
 
     // Toutes les URL d archive connues pour ce serveur / ce programme.

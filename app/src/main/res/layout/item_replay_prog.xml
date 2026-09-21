@@ -1,69 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_marginBottom="8dp"
-    android:background="@drawable/bg_tile"
-    android:descendantFocusability="afterDescendants"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:padding="12dp">
-
-    <LinearLayout
-        android:id="@+id/replayPlayArea"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:clickable="true"
-        android:focusable="true"
-        android:nextFocusRight="@id/replayDownloadBtn"
-        android:orientation="vertical"
-        android:paddingEnd="12dp">
-
-        <TextView
-            android:id="@+id/progTime"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="?attr/kzAccent"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/progTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
-            android:ellipsize="end"
-            android:maxLines="2"
-            android:textColor="@color/text"
-            android:textSize="15sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/progDesc"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
-            android:ellipsize="end"
-            android:maxLines="2"
-            android:textColor="@color/muted"
-            android:textSize="12sp" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/replayDownloadBtn"
-        android:layout_width="160dp"
-        android:layout_height="46dp"
-        android:background="@drawable/bg_action_btn"
-        android:clickable="true"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
-        android:gravity="center"
-        android:nextFocusLeft="@id/replayPlayArea"
-        android:paddingStart="18dp"
-        android:paddingEnd="18dp"
-        android:text="Télécharger"
-        android:textColor="@color/btn_action_text"
-        android:textSize="13sp"
-        android:textStyle="bold" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:background="@drawable/bg_tile" android:descendantFocusability="afterDescendants" android:gravity="center_vertical" android:orientation="horizontal" android:padding="12dp">
+  <LinearLayout android:id="@+id/replayPlayArea" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:clickable="true" android:focusable="true" android:orientation="vertical" android:paddingEnd="12dp">
+    <TextView android:id="@+id/progTime" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="?attr/kzAccent" android:textSize="12sp" android:textStyle="bold" />
+    <TextView android:id="@+id/progTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:ellipsize="end" android:maxLines="2" android:textColor="@color/text" android:textSize="15sp" android:textStyle="bold" />
+    <TextView android:id="@+id/progDesc" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:ellipsize="end" android:maxLines="2" android:textColor="@color/muted" android:textSize="12sp" />
+  </LinearLayout>
+  <TextView android:id="@+id/replayDownloadBtn" android:layout_width="160dp" android:layout_height="46dp" android:background="@drawable/bg_action_btn" android:clickable="true" android:focusable="true" android:gravity="center" android:paddingStart="18dp" android:paddingEnd="18dp" android:text="Telecharger" android:textColor="@color/btn_action_text" android:textSize="13sp" android:textStyle="bold" />
 </LinearLayout>

@@ -90,19 +90,21 @@ class ReplayProgramsActivity : BaseActivity() {
             Toast.makeText(this, "Le telechargement Replay est disponible pour Xtream.", Toast.LENGTH_LONG).show()
             return
         }
+        msgTv.text = "Preparation du telechargement..."
         Toast.makeText(this, "Preparation du replay...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch {
             val url = try { ReplayApi.archiveDownloadUrl(pl, streamId, chCmd, p) } catch (_: Exception) { "" }
             if (url.isBlank()) {
+                msgTv.text = "Ce serveur ne fournit pas ce replay dans un format telechargeable."
                 Toast.makeText(this@ReplayProgramsActivity,
                     "Ce serveur ne fournit pas ce replay dans un format telechargeable.",
                     Toast.LENGTH_LONG).show()
                 return@launch
             }
             val title = listOf(p.title, chName, p.time).filter { it.isNotBlank() }.joinToString(" - ")
-            Toast.makeText(this@ReplayProgramsActivity,
-                Downloads.enqueue(this@ReplayProgramsActivity, title, url),
-                Toast.LENGTH_LONG).show()
+            val result = Downloads.enqueue(this@ReplayProgramsActivity, title, url)
+            msgTv.text = result
+            Toast.makeText(this@ReplayProgramsActivity, result, Toast.LENGTH_LONG).show()
         }
     }
 
