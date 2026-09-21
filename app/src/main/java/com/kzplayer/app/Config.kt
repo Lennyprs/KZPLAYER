@@ -7,7 +7,7 @@ object Config {
     // Ce n'est pas une securite parfaite, mais ca complique l'extraction basique.
     private const val P1 = "https://script.google.com"
     private const val P2 = "/macros/s/"
-    private const val P3 = "AKfycbx31seeUfUfgHkBj8Zjxjl9QizKfWNbLFTVGl-iKMSxzqoHhCSvxPyUtni5w9NE71az"
+    private const val P3 = "AKfycbwndI9dry8Q6DYoqD0PYeNFc23MjKjFNX9tPrcj4oUd6qMht6v_jlYwT1_8tJxICtk"
     const val LOGIN_PATH = "/exec"
     const val USER_AGENT = "KZPlayer/1.0 (Android)"
 

@@ -73,7 +73,7 @@ class DownloadsActivity : BaseActivity() {
         if (files.isEmpty() && tasks.isEmpty()) {
             msgTv.visibility = View.VISIBLE
             msgTv.text = "Aucun t\u00e9l\u00e9chargement pour le moment. " +
-                "Utilise le bouton T\u00e9l\u00e9charger sur la fiche d un film ou d un \u00e9pisode."
+                "Utilise le bouton T\u00e9l\u00e9charger sur un film, un \u00e9pisode ou un replay."
         } else {
             msgTv.visibility = View.GONE
         }

@@ -119,6 +119,7 @@ class ReplayProgramsActivity : BaseActivity() {
 
     inner class ProgAdapter : RecyclerView.Adapter<ProgAdapter.VH>() {
         inner class VH(val v: View) : RecyclerView.ViewHolder(v) {
+            val playArea: View = v.findViewById(R.id.replayPlayArea)
             val time: TextView = v.findViewById(R.id.progTime)
             val title: TextView = v.findViewById(R.id.progTitle)
             val desc: TextView = v.findViewById(R.id.progDesc)
@@ -133,15 +134,15 @@ class ReplayProgramsActivity : BaseActivity() {
             holder.title.text = p.title
             if (p.desc.isBlank()) holder.desc.visibility = View.GONE
             else { holder.desc.visibility = View.VISIBLE; holder.desc.text = p.desc }
-            holder.v.setOnClickListener { playProg(p) }
+            holder.playArea.setOnClickListener { playProg(p) }
             holder.download.setOnClickListener { downloadProg(p) }
             holder.download.setOnFocusChangeListener { view, has ->
                 val scale = if (has) 1.08f else 1f
                 view.animate().scaleX(scale).scaleY(scale).setDuration(110).start()
             }
-            holder.v.setOnFocusChangeListener { view, has ->
-                val s = if (has) 1.02f else 1f
-                view.animate().scaleX(s).scaleY(s).setDuration(110).start()
+            holder.playArea.setOnFocusChangeListener { view, has ->
+                val scale = if (has) 1.02f else 1f
+                view.animate().scaleX(scale).scaleY(scale).setDuration(110).start()
             }
         }
     }
