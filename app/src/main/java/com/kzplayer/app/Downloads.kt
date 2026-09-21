@@ -76,6 +76,7 @@ object Downloads {
     // Ici on annule d abord toutes les taches liees a ce fichier, puis on efface.
     fun removeAll(ctx: Context, f: java.io.File): Boolean {
         val nom = f.name
+        DownloadService.annuler(nom)
         val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
         if (dm != null) {
             for (t in tasks(ctx)) {
@@ -91,7 +92,7 @@ object Downloads {
 
     // v370 : annulation d une tache ET nettoyage du fichier partiel restant.
     fun cancelTask(ctx: Context, t: Task): Boolean {
-        val ok = cancel(ctx, t.id)
+        val ok = if (t.internal) { DownloadService.annuler(t.fileName); true } else cancel(ctx, t.id)
         val d = dir(ctx)
         if (d != null && t.fileName.isNotBlank()) {
             val f = java.io.File(d, t.fileName)
@@ -116,17 +117,17 @@ object Downloads {
         val status: Int,
         val done: Long,
         val total: Long,
-        val fileName: String
+        val fileName: String,
+        val internal: Boolean = false
     )
 
     // v369 : liste des telechargements connus du gestionnaire Android.
     fun tasks(ctx: Context): List<Task> {
-        val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-            ?: return emptyList()
         val out = ArrayList<Task>()
-        try {
-            val c = dm.query(DownloadManager.Query()) ?: return emptyList()
-            c.use { cur ->
+        val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+        if (dm != null) try {
+            val c = dm.query(DownloadManager.Query())
+            c?.use { cur ->
                 while (cur.moveToNext()) {
                     val id = cur.getLong(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_ID))
                     val st = cur.getInt(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
@@ -136,10 +137,16 @@ object Downloads {
                     var nom = cur.getString(cur.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)) ?: ""
                     val fic = Uri.decode(uri.substringAfterLast(chr47()))
                     if (nom.isBlank()) nom = fic
-                    out.add(Task(id, nom, st, done, tot, fic))
+                    out.add(Task(id, nom, st, done, tot, fic, false))
                 }
             }
         } catch (e: Exception) {}
+        val known = out.map { it.fileName }.toHashSet()
+        for (job in DownloadService.jobs.values) {
+            if (known.contains(job.fileName)) continue
+            val fakeId = -kotlin.math.abs(job.fileName.hashCode().toLong()) - 1L
+            out.add(Task(fakeId, job.title, job.status, job.done, job.total, job.fileName, true))
+        }
         return out
     }
 
@@ -210,7 +217,7 @@ object Downloads {
             CoroutineScope(Dispatchers.Main).launch {
                 val frais = try { Api.stalkerLink(pl, cmd, "movie") } catch (e: Exception) { null }
                 val url = if (!frais.isNullOrBlank()) frais else ancienUrl
-                val msg = enqueue(ctx, titre, url, cmd)
+                val msg = if (t.internal) enqueueInternal(ctx, titre, url, cmd) else enqueue(ctx, titre, url, cmd)
                 if (notify) toast(ctx, msg)
             }
             return
@@ -219,7 +226,7 @@ object Downloads {
             if (notify) toast(ctx, "Impossible de relancer ce t\u00e9l\u00e9chargement : relance-le depuis la fiche du titre.")
             return
         }
-        val msg = enqueue(ctx, titre, ancienUrl, cmd)
+        val msg = if (t.internal) enqueueInternal(ctx, titre, ancienUrl, cmd) else enqueue(ctx, titre, ancienUrl, cmd)
         if (notify) toast(ctx, msg)
     }
 
@@ -258,6 +265,18 @@ object Downloads {
     // Renvoie le message a afficher a l utilisateur.
     // cmd : commande du serveur (Stalker) qui permet de refabriquer un lien frais
     // si le jeton expire pendant le telechargement.
+    fun enqueueInternal(ctx: Context, title: String, url: String, cmd: String = ""): String {
+        if (url.isBlank()) return "Lien de telechargement introuvable."
+        if (url.contains(".m3u8", true)) return "Format HLS non telechargeable sur ce serveur."
+        return try {
+            val name = safeName(title, url)
+            rememberSource(ctx, name, if (title.isBlank()) name else title, url, cmd)
+            val started = DownloadService.demarrer(ctx.applicationContext, name, if (title.isBlank()) name else title, url, cmd)
+            if (started) "T\u00e9l\u00e9chargement lanc\u00e9 : " + name
+            else "Impossible de demarrer le service de telechargement."
+        } catch (e: Exception) { "Telechargement impossible : " + (e.message ?: "erreur") }
+    }
+
     fun enqueue(ctx: Context, title: String, url: String, cmd: String = ""): String {
         if (url.isBlank()) return "Lien de t\u00e9l\u00e9chargement introuvable."
         if (url.contains(".m3u8")) return "Ce contenu est diffus\u00e9 en direct : t\u00e9l\u00e9chargement impossible."

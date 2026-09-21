@@ -242,7 +242,7 @@ object ReplayApi {
             ""
         }
 
-    /** v402 : URL TS directe sans test Range prealable. */
+    /** v404 : URL TS directe sans test Range prealable. */
     suspend fun archiveDownloadUrl(pl: Playlist, streamId: String, cmd: String, p: Prog): String =
         withContext(Dispatchers.IO) {
             if (pl.type != "xtream" || streamId.isBlank()) return@withContext ""

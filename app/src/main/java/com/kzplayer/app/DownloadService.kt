@@ -274,17 +274,20 @@ class DownloadService : Service() {
                 .build()
         }
 
-        fun demarrer(ctx: Context, fileName: String, title: String, url: String, cmd: String) {
+        fun demarrer(ctx: Context, fileName: String, title: String, url: String, cmd: String): Boolean {
+            annules.remove(fileName)
+            jobs[fileName] = Prog(fileName, title.ifBlank { fileName }, 0L, 0L, ST_PENDING, url, cmd)
             val i = Intent(ctx, DownloadService::class.java)
-                .putExtra("file", fileName)
-                .putExtra("title", title)
-                .putExtra("url", url)
-                .putExtra("cmd", cmd)
+                .putExtra("file", fileName).putExtra("title", title).putExtra("url", url).putExtra("cmd", cmd)
+            var started = false
             try {
                 if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+                started = true
             } catch (e: Throwable) {
-                try { ctx.startService(i) } catch (e2: Throwable) {}
+                try { ctx.startService(i); started = true } catch (e2: Throwable) {}
             }
+            if (!started) jobs.remove(fileName)
+            return started
         }
 
         fun annuler(fileName: String) {

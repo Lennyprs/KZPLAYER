@@ -97,14 +97,13 @@ class ReplayProgramsActivity : BaseActivity() {
         lifecycleScope.launch {
             val url = try { ReplayApi.archiveDownloadUrl(pl, streamId, chCmd, p) } catch (_: Exception) { "" }
             if (url.isBlank()) {
-                msgTv.text = "Ce serveur ne fournit pas ce replay dans un format telechargeable."
                 Toast.makeText(this@ReplayProgramsActivity,
                     "Ce serveur ne fournit pas ce replay dans un format telechargeable.",
                     Toast.LENGTH_LONG).show()
                 return@launch
             }
             val title = listOf(p.title, chName, p.time).filter { it.isNotBlank() }.joinToString(" - ")
-            val result = Downloads.enqueue(this@ReplayProgramsActivity, title, url)
+            val result = Downloads.enqueueInternal(this@ReplayProgramsActivity, title, url)
             msgTv.text = result
             Toast.makeText(this@ReplayProgramsActivity, result, Toast.LENGTH_LONG).show()
             if (result.startsWith("T\u00e9l\u00e9chargement lanc\u00e9")) {
@@ -143,17 +142,10 @@ class ReplayProgramsActivity : BaseActivity() {
             else { holder.desc.visibility = View.VISIBLE; holder.desc.text = p.desc }
             holder.playArea.setOnClickListener { playProg(p) }
             holder.download.setOnClickListener { downloadProg(p) }
-            // Certains boitiers TV ne transforment pas OK/ENTER en performClick sur
-            // un enfant de RecyclerView. On intercepte donc explicitement la touche.
             holder.download.setOnKeyListener { _, keyCode, event ->
-                val activate = keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                    keyCode == KeyEvent.KEYCODE_ENTER ||
-                    keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
-                    keyCode == KeyEvent.KEYCODE_BUTTON_A
-                if (activate && event.action == KeyEvent.ACTION_UP) {
-                    downloadProg(p)
-                    true
-                } else activate
+                val activate = keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
+                    keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER || keyCode == KeyEvent.KEYCODE_BUTTON_A
+                if (activate && event.action == KeyEvent.ACTION_UP) { downloadProg(p); true } else activate
             }
             holder.download.setOnFocusChangeListener { view, has ->
                 val scale = if (has) 1.08f else 1f

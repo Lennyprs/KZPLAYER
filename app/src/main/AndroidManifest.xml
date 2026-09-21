@@ -7,6 +7,9 @@
          Sans elle, l'appli plantait apres ~3 s de lecture (SecurityException) et
          revenait a l'ecran des serveurs. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- v145 : telechargement + installation en direct des mises a jour -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -208,6 +211,11 @@
             android:name=".AddPlaylistActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false" />
+
+        <service
+            android:name=".DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- v145 : FileProvider pour partager l'APK telecharge avec l'installeur systeme -->
         <provider
