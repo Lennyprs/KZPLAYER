@@ -32,8 +32,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Installer le SDK Android
-        uses: android-actions/setup-android@v3
+      # v399 : ne plus utiliser ancienne action de configuration Android. Depuis le passage
+      # des runners GitHub a Node 24, cette action remplace sdkmanager puis reste
+      # bloquee sur les anciennes licences Google TV/XR en mode interactif.
+      # ubuntu-latest contient deja le SDK : on accepte les licences sans interaction
+      # et on installe uniquement les composants reellement utilises (compileSdk 34).
+      - name: Préparer le SDK Android 34
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER=$(command -v sdkmanager)
+          fi
+          echo "sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Generer le wrapper Gradle si absent
         run: |
