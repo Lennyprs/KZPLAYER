@@ -81,14 +81,16 @@ class KzRenderersFactory(
                         if (sw.isNotEmpty()) sw else all
                     }
                     else -> {
-                        // v407 : AUTO = LOGICIEL d'abord, materiel en secours.
-                        // Le mode materiel prioritaire introduit en v390 provoquait sur
-                        // certains firmwares exactement le symptome son OK / image noire
-                        // ou premiere image figee. Ces decodeurs vendor peuvent accepter
-                        // le flux sans lever d'erreur, donc le fallback ExoPlayer ne se
-                        // declenche jamais. Le decodeur Android logiciel evite ce faux
-                        // succes. Le mode Materiel reste disponible dans les reglages.
-                        if (sw.isNotEmpty()) sw + hw else all
+                        // v408 : comportement fluide de la 3.2.4 : materiel d abord.
+                        // Le logiciel n est utilise en priorite QUE si ce meme appareil
+                        // a reellement echoue a rendre une image. On evite ainsi la forte
+                        // latence et les saccades du decodage logiciel sur les flux HD,
+                        // tout en gardant le secours automatique pour les box defectueuses.
+                        if (VideoDecoderPref.autoSoftware(ctx)) {
+                            if (sw.isNotEmpty()) sw + hw else all
+                        } else {
+                            if (hw.isNotEmpty()) hw + sw else all
+                        }
                     }
                 }
             }

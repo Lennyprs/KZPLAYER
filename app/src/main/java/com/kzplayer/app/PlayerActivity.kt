@@ -70,6 +70,16 @@ class PlayerActivity : AppCompatActivity() {
             val demarre = p.playbackState == Player.STATE_READY &&
                 (!hasVideo || firstVideoFrameRendered)
             if (demarre) { demarrageOk = true; return }
+            // Le flux est READY, il contient une piste video, mais aucune image
+            // n a ete rendue : le decodeur materiel a accepte le flux puis s est
+            // bloque silencieusement. On passe UNE fois en logiciel sur cet appareil.
+            if (p.playbackState == Player.STATE_READY && hasVideo &&
+                !firstVideoFrameRendered &&
+                VideoDecoderPref.current(this@PlayerActivity) == VideoDecoderPref.AUTO &&
+                !VideoDecoderPref.autoSoftware(this@PlayerActivity)) {
+                VideoDecoderPref.setAutoSoftware(this@PlayerActivity, true)
+                try { recreate(); return } catch (_: Throwable) {}
+            }
             demarrageEssais++
             val nb = candidates.size.coerceAtLeast(1)
             if (demarrageEssais <= nb) {
@@ -243,6 +253,8 @@ class PlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_player)
         hideSystemBars()
+        // v408 : restaure une fois le mode rapide de la 3.2.4 apres la 3.2.7.
+        VideoDecoderPref.migrate328(this)
 
         playerView = findViewById(R.id.playerView)
         // Navigation telecommande : le controleur reste affiche un peu plus longtemps
