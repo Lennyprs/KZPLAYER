@@ -38,6 +38,23 @@ object VideoDecoderPref {
             .putBoolean(KEY_AUTO_SW, on).apply()
     }
 
+
+    // v410 / 3.3.0 : les essais precedents ont pu laisser le logiciel force
+    // dans les preferences persistantes. On restaure une seule fois AUTO avec
+    // materiel prioritaire. TextureView corrige la surface noire sans ralentir
+    // le decodage video.
+    private const val KEY_V330_RESET = "decoder_v330_reset"
+    fun resetFor330(ctx: Context) {
+        val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (sp.getBoolean(KEY_V330_RESET, false)) return
+        sp.edit()
+            .putString(KEY, AUTO)
+            .putBoolean(KEY_AUTO_SW, false)
+            .putInt(KEY_GELS, 0)
+            .putBoolean(KEY_V330_RESET, true)
+            .apply()
+    }
+
     fun noteFreeze(ctx: Context): Int {
         val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val n = sp.getInt(KEY_GELS, 0) + 1

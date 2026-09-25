@@ -237,6 +237,9 @@ class PlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_player)
         hideSystemBars()
+        // v410 : materiel rapide + TextureView compatible. Reinitialise une
+        // seule fois les modes logiciel restes des versions de test.
+        VideoDecoderPref.resetFor330(this)
 
         playerView = findViewById(R.id.playerView)
         // Navigation telecommande : le controleur reste affiche un peu plus longtemps
