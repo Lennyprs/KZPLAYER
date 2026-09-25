@@ -376,30 +376,13 @@ class PlayerActivity : AppCompatActivity() {
             androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpFactory, extractors)
                 .setLoadErrorHandlingPolicy(errPolicy)
         }
-        // v147 : usine de renderers KZ qui donne la priorite au decodeur video LOGICIEL
-        // (fixe l'image figee sur les box dont le decodeur materiel plante silencieusement).
-        // setEnableDecoderFallback(true) est deja active dans KzRenderersFactory.
-// v385 : en DIRECT, c est la puce video qui decode (sauf si tu as choisi
-        // "logiciel" dans les reglages). Les chaines Xtream n indiquent pas leur qualite
-        // dans leur nom : beaucoup de chaines 1080i / 50 images ne contenaient ni "FHD"
-        // ni "4K", elles partaient donc sur le decodeur logiciel, incapable de suivre
-        // -> saccades. Le decodeur logiciel reste juste derriere, en secours automatique.
-        // v390 : le decodeur ne depend plus du nom de la chaine (FHD, 4K...) : ces
-        // etiquettes sont absentes chez beaucoup de fournisseurs, donc des chaines HD
-        // partaient en logiciel et saccadaient. Le mode AUTO gere tout, pour tous.
-        val renderersFactory = KzRenderersFactory(this, false)
-            // CORRECTION SYNC SON/IMAGE (v86) :
-            // - VOD/series : EXTENSION_RENDERER_MODE_ON => on prefere le decodeur AUDIO MATERIEL
-            //   (AAC/H264 parfaitement synchronises). Avant, le mode PREFER forcait FFmpeg logiciel
-            //   sur tout l'audio, ce qui faisait deriver le son par rapport a l'image sur les episodes.
-            //   FFmpeg reste utilise EN SECOURS pour AC3/EAC3/DTS grace a setEnableDecoderFallback(true)
-            //   (si le materiel n'a pas le codec ou le decode mal, ExoPlayer bascule sur FFmpeg).
-            // - Live : on garde PREFER (FFmpeg prioritaire) pour ne rien casser cote Stalker/MAG.
+        // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
+        // Android choisit le decodeur adapte au firmware, avec repli natif si
+        // l initialisation echoue. FFmpeg reste uniquement un secours audio.
+        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
+            .setEnableDecoderFallback(true)
             .setExtensionRendererMode(
-                if (isVod)
-                    androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
-                else
-                    androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             )
 
         val playerBuilder = ExoPlayer.Builder(this, renderersFactory)
@@ -602,9 +585,8 @@ class PlayerActivity : AppCompatActivity() {
         if (isLiveMode) recoveryHandler.postDelayed(stallWatchdog, 2000)
         // v389 : surveillance du demarrage (rond de chargement sans fin).
         recoveryHandler.postDelayed(startupWatchdog, 9000)
-        // v380 : surveillance de l image (direct ET films/series). Ne touche pas au flux.
-        lastFramesTs = SystemClock.elapsedRealtime()
-        recoveryHandler.postDelayed(frozenImageWatchdog, 4000)
+        // v411 : aucun detach/reattach automatique de la surface. Ce watchdog
+        // provoquait lui-meme des gels sur certains MediaCodec vendor.
     }
 
     private fun playCurrent() {
@@ -695,12 +677,9 @@ class PlayerActivity : AppCompatActivity() {
         demarrageEssais = 0
         recoveryHandler.removeCallbacks(startupWatchdog)
         recoveryHandler.removeCallbacks(stallWatchdog)
-        recoveryHandler.removeCallbacks(frozenImageWatchdog)
         playCurrent()
         showTopBarTemporarily()
         recoveryHandler.postDelayed(startupWatchdog, 9000)
-        lastFramesTs = SystemClock.elapsedRealtime()
-        recoveryHandler.postDelayed(frozenImageWatchdog, 4000)
         recoveryHandler.postDelayed(stallWatchdog, 2000)
     }
 
