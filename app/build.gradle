@@ -27,7 +27,7 @@ android {
             vcCode = runNum + 400
         }
         versionCode vcCode
-        versionName "3.3.1"
+        versionName "3.3.2"
     }
 
     buildTypes {

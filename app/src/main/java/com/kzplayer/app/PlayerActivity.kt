@@ -147,72 +147,66 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // v380 : IMAGE FIGEE (le son continue, l image ne bouge plus).
-    // Aucune reconnexion, aucun rechargement, aucun rebuffer : on se contente de
-    // rebrancher l affichage sur le lecteur, ce qui recree la surface de dessin.
-    // La lecture ne s arrete pas une seule fois, le flux n est pas retelecharge.
-    // v390 : nombre de gels non recuperes pendant cette lecture.
-    private var gelsGraves = 0
+    // v412 : la video envoyee montre un cas precis : une premiere frame est
+    // affichee, le son continue, mais renderedOutputBufferCount ne progresse plus.
+    // On ne detache jamais la surface. On change automatiquement de variante
+    // de transport (.m3u8 / .ts / sans extension), puis on relance proprement.
     private var lastFrames = -1L
     private var lastFramesTs = 0L
-    private var surfaceKicks = 0
+    private var frameRecoveryCount = 0
     private val frozenImageWatchdog = object : Runnable {
         override fun run() {
             try {
                 val p = player
-                if (p != null && p.isPlaying && p.videoSize.width > 0) {
+                if (p != null && p.playWhenReady && p.playbackState == Player.STATE_READY &&
+                    p.currentTracks.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)) {
                     val frames = try {
-                        (p.videoDecoderCounters?.renderedOutputBufferCount ?: 0).toLong()
-                    } catch (e: Throwable) { -1L }
+                        (p.videoDecoderCounters?.renderedOutputBufferCount ?: -1).toLong()
+                    } catch (_: Throwable) { -1L }
                     val now = SystemClock.elapsedRealtime()
-                    if (frames < 0L) {
-                        // Compteur indisponible : on ne fait rien du tout.
-                    } else if (frames != lastFrames) {
-                        // Des images arrivent : tout va bien, on remet le compteur a zero.
+                    if (frames >= 0L && frames != lastFrames) {
                         lastFrames = frames
                         lastFramesTs = now
-                        surfaceKicks = 0
-                    } else if (lastFramesTs > 0L && now - lastFramesTs > 5000L && surfaceKicks < 3) {
-                        // Plus aucune image depuis 5 s alors que la lecture tourne :
-                        // on rebranche juste l affichage.
-                        surfaceKicks++
+                        frameRecoveryCount = 0
+                    } else if (frames >= 0L && lastFramesTs > 0L && now - lastFramesTs >= 3500L) {
                         lastFramesTs = now
-                        try {
-                            playerView.player = null
-                            playerView.player = p
-                        } catch (e: Throwable) {}
-                    } else if (lastFramesTs > 0L && now - lastFramesTs > 5000L) {
-                        // v387 : rebrancher l affichage n a pas suffi (3 essais) => l image est
-                        // vraiment bloquee. On relance le flux au lieu de laisser l ecran fige.
-                        // En direct : reconnexion silencieuse. En film/serie : on reprend a la
-                        // seconde ou on etait, sans rien afficher a l ecran.
-                        lastFramesTs = now
-                        surfaceKicks = 0
-                        gelsGraves++
-                        // v390 : 2 gels non recuperes = le decodeur video de cet appareil
-                        // ne suit pas ce flux. On bascule CET appareil en decodeur logiciel
-                        // (retenu pour la suite) et on relance proprement la lecture.
-                        if (gelsGraves >= 2 && !VideoDecoderPref.autoSoftware(this@PlayerActivity)) {
-                            VideoDecoderPref.noteFreeze(this@PlayerActivity)
-                            VideoDecoderPref.setAutoSoftware(this@PlayerActivity, true)
-                            try { recreate(); return } catch (e: Throwable) {}
+                        frameRecoveryCount++
+                        val oldIdx = candIdx
+                        val nextIdx = nextTransportCandidate(oldIdx)
+                        if (nextIdx >= 0 && nextIdx != oldIdx) {
+                            candIdx = nextIdx
+                            workingCandIdx = nextIdx
+                            playCurrent()
+                        } else if (isLiveMode) {
+                            // Toutes les variantes ont ete essayees : recree le pipeline
+                            // au bord du direct, sans manipuler la SurfaceView.
+                            p.stop()
+                            playCurrent()
+                            try { p.seekToDefaultPosition() } catch (_: Throwable) {}
+                        } else {
+                            val pos = p.currentPosition
+                            p.stop()
+                            playCurrent()
+                            if (pos > 0L) try { p.seekTo(pos) } catch (_: Throwable) {}
                         }
-                        try {
-                            if (isLiveMode) {
-                                reconnectLive()
-                            } else {
-                                val pos = p.currentPosition
-                                playCurrent()
-                                if (pos > 0L) p.seekTo(pos)
-                            }
-                        } catch (e: Throwable) {}
                     }
                 } else {
+                    lastFrames = -1L
                     lastFramesTs = SystemClock.elapsedRealtime()
                 }
-            } catch (e: Throwable) {}
-            recoveryHandler.postDelayed(this, 2000)
+            } catch (_: Throwable) {}
+            recoveryHandler.postDelayed(this, 1000L)
         }
+    }
+
+    private fun nextTransportCandidate(current: Int): Int {
+        if (candidates.size <= 1) return -1
+        // Si le TS brut se fige, HLS est prioritaire. Sinon on essaie chaque
+        // autre forme une seule fois avant de reconstruire le meme pipeline.
+        val order = candidates.indices
+            .filter { it != current }
+            .sortedBy { if (candidates[it].substringBefore('?').endsWith(".m3u8", true)) 0 else 1 }
+        return order.firstOrNull() ?: -1
     }
 
 
@@ -585,13 +579,16 @@ class PlayerActivity : AppCompatActivity() {
         if (isLiveMode) recoveryHandler.postDelayed(stallWatchdog, 2000)
         // v389 : surveillance du demarrage (rond de chargement sans fin).
         recoveryHandler.postDelayed(startupWatchdog, 9000)
-        // v411 : aucun detach/reattach automatique de la surface. Ce watchdog
-        // provoquait lui-meme des gels sur certains MediaCodec vendor.
+        // v412 : detecte le cas son actif + meme frame video pendant 3,5 s.
+        lastFramesTs = SystemClock.elapsedRealtime()
+        recoveryHandler.postDelayed(frozenImageWatchdog, 3000L)
     }
 
     private fun playCurrent() {
         val p = player ?: return
         val u = candidates.getOrNull(candIdx) ?: return
+        lastFrames = -1L
+        lastFramesTs = SystemClock.elapsedRealtime()
         // On laisse ExoPlayer auto-detecter le format (extension + Content-Type + redirections).
         // Forcer le MIME pouvait casser un .ts qui redirige en realite vers du HLS.
         p.setMediaItem(buildMediaItem(u))
@@ -677,9 +674,11 @@ class PlayerActivity : AppCompatActivity() {
         demarrageEssais = 0
         recoveryHandler.removeCallbacks(startupWatchdog)
         recoveryHandler.removeCallbacks(stallWatchdog)
+        recoveryHandler.removeCallbacks(frozenImageWatchdog)
         playCurrent()
         showTopBarTemporarily()
         recoveryHandler.postDelayed(startupWatchdog, 9000)
+        recoveryHandler.postDelayed(frozenImageWatchdog, 3000L)
         recoveryHandler.postDelayed(stallWatchdog, 2000)
     }
 
@@ -932,34 +931,37 @@ class PlayerActivity : AppCompatActivity() {
     private fun buildCandidates(url: String): List<String> {
         val list = LinkedHashSet<String>()
         fun addVariants(u: String) {
-            list.add(u)
             val q = u.indexOf('?')
             val path = if (q >= 0) u.substring(0, q) else u
             val query = if (q >= 0) u.substring(q) else ""
             when {
-                path.endsWith(".ts") -> {
-                    list.add(path.removeSuffix(".ts") + ".m3u8" + query)
-                    list.add(path.removeSuffix(".ts") + query)
+                path.endsWith(".ts", true) -> {
+                    // v412 : HLS d abord. Sur le flux filme, le TS brut rend une
+                    // seule frame puis uniquement l audio, sans erreur ExoPlayer.
+                    list.add(path.dropLast(3) + ".m3u8" + query)
+                    list.add(u)
+                    list.add(path.dropLast(3) + query)
                 }
-                path.endsWith(".m3u8") -> {
-                    list.add(path.removeSuffix(".m3u8") + ".ts" + query)
-                    list.add(path.removeSuffix(".m3u8") + query)
+                path.endsWith(".m3u8", true) -> {
+                    list.add(u)
+                    list.add(path.dropLast(5) + ".ts" + query)
+                    list.add(path.dropLast(5) + query)
                 }
                 else -> {
-                    // URL sans extension (ex: .../user/pass/12345) -> on tente .ts puis .m3u8
                     val lastSeg = path.substringAfterLast('/')
                     if (!lastSeg.contains('.')) {
-                        list.add(path + ".ts" + query)
                         list.add(path + ".m3u8" + query)
-                    }
+                        list.add(u)
+                        list.add(path + ".ts" + query)
+                    } else list.add(u)
                 }
             }
         }
         addVariants(url)
-        // Format "legacy" Xtream pour le live : http://host/USER/PASS/ID(.ext) sans le segment /live/
         if (url.contains("/live/")) addVariants(url.replace("/live/", "/"))
         return list.toList()
     }
+
 
     // Pilotage a la telecommande (boitier / TV Android, sans ecran tactile)
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
