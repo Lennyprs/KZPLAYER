@@ -38,21 +38,6 @@ object VideoDecoderPref {
             .putBoolean(KEY_AUTO_SW, on).apply()
     }
 
-    // v408 : la 3.2.7 a pu laisser le mode logiciel automatique actif, ce qui
-    // provoque une grosse latence sur les chaines HD. On le remet a zero UNE fois
-    // lors du passage en 3.2.8. S il y a ensuite un vrai ecran noir, le watchdog
-    // le reactivera seulement pour cet appareil.
-    private const val KEY_V328_MIGRATED = "decoder_v328_migrated"
-    fun migrate328(ctx: Context) {
-        val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (sp.getBoolean(KEY_V328_MIGRATED, false)) return
-        sp.edit()
-            .putBoolean(KEY_AUTO_SW, false)
-            .putInt(KEY_GELS, 0)
-            .putBoolean(KEY_V328_MIGRATED, true)
-            .apply()
-    }
-
     fun noteFreeze(ctx: Context): Int {
         val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val n = sp.getInt(KEY_GELS, 0) + 1
@@ -68,7 +53,7 @@ object VideoDecoderPref {
     fun label(value: String): String = when (value) {
         SOFTWARE -> "Logiciel (compatibilit\u00e9 maximale)"
         HARDWARE -> "Mat\u00e9riel (acc\u00e9l\u00e9ration GPU)"
-        else -> "Auto (fluide avec secours automatique)"
+        else -> "Auto (logiciel prioritaire)"
     }
 
     fun description(value: String): String = when (value) {

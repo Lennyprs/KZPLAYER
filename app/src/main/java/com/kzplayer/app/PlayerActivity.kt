@@ -56,30 +56,14 @@ class PlayerActivity : AppCompatActivity() {
     // On surveille donc le demarrage : si rien ne s affiche au bout de 9 s, on essaie
     // automatiquement l adresse suivante, puis une autre signature de lecteur.
     private var demarrageOk = false
-    // v407 : READY + position qui avance peut venir de l audio seul. On attend
-    // une vraie premiere image rendue avant de declarer le demarrage reussi.
-    private var firstVideoFrameRendered = false
     private var demarrageEssais = 0
     private val startupWatchdog = object : Runnable {
         override fun run() {
             val p = player ?: return
             if (demarrageOk) return
-            val hasVideo = try {
-                p.currentTracks.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)
-            } catch (_: Throwable) { p.videoSize.width > 0 }
             val demarre = p.playbackState == Player.STATE_READY &&
-                (!hasVideo || firstVideoFrameRendered)
+                (p.videoSize.width > 0 || p.currentPosition > 0L)
             if (demarre) { demarrageOk = true; return }
-            // Le flux est READY, il contient une piste video, mais aucune image
-            // n a ete rendue : le decodeur materiel a accepte le flux puis s est
-            // bloque silencieusement. On passe UNE fois en logiciel sur cet appareil.
-            if (p.playbackState == Player.STATE_READY && hasVideo &&
-                !firstVideoFrameRendered &&
-                VideoDecoderPref.current(this@PlayerActivity) == VideoDecoderPref.AUTO &&
-                !VideoDecoderPref.autoSoftware(this@PlayerActivity)) {
-                VideoDecoderPref.setAutoSoftware(this@PlayerActivity, true)
-                try { recreate(); return } catch (_: Throwable) {}
-            }
             demarrageEssais++
             val nb = candidates.size.coerceAtLeast(1)
             if (demarrageEssais <= nb) {
@@ -208,7 +192,7 @@ class PlayerActivity : AppCompatActivity() {
                         // v390 : 2 gels non recuperes = le decodeur video de cet appareil
                         // ne suit pas ce flux. On bascule CET appareil en decodeur logiciel
                         // (retenu pour la suite) et on relance proprement la lecture.
-                        if (gelsGraves >= 1 && !VideoDecoderPref.autoSoftware(this@PlayerActivity)) {
+                        if (gelsGraves >= 2 && !VideoDecoderPref.autoSoftware(this@PlayerActivity)) {
                             VideoDecoderPref.noteFreeze(this@PlayerActivity)
                             VideoDecoderPref.setAutoSoftware(this@PlayerActivity, true)
                             try { recreate(); return } catch (e: Throwable) {}
@@ -253,8 +237,6 @@ class PlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_player)
         hideSystemBars()
-        // v408 : restaure une fois le mode rapide de la 3.2.4 apres la 3.2.7.
-        VideoDecoderPref.migrate328(this)
 
         playerView = findViewById(R.id.playerView)
         // Navigation telecommande : le controleur reste affiche un peu plus longtemps
@@ -508,12 +490,6 @@ class PlayerActivity : AppCompatActivity() {
         }
         candIdx = 0
         p.addListener(object : Player.Listener {
-            override fun onRenderedFirstFrame() {
-                firstVideoFrameRendered = true
-                demarrageOk = true
-                recoveryHandler.removeCallbacks(startupWatchdog)
-            }
-
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
                 // Film/serie sans son : il y a des pistes audio mais aucune n'est selectionnee.
                 // On relache la limite de canaux (une seule fois) pour qu'une piste soit choisie
@@ -543,12 +519,7 @@ class PlayerActivity : AppCompatActivity() {
                 // on la garde pour les prochains films de la session.
                 if (playbackState == Player.STATE_READY) repliEntetesFait = false
                 // v389 : la chaine est partie -> plus besoin de surveiller le demarrage.
-                // v407 : ne jamais utiliser videoSize ou currentPosition comme preuve
-                // d image. Certains decodeurs defectueux annoncent une taille et jouent
-                // l audio tout en laissant la surface noire. onRenderedFirstFrame est la
-                // seule confirmation fiable.
-                if (playbackState == Player.STATE_READY &&
-                    !p.currentTracks.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)) {
+                if (playbackState == Player.STATE_READY && p.videoSize.width > 0) {
                     demarrageOk = true
                     recoveryHandler.removeCallbacks(startupWatchdog)
                 }
@@ -636,8 +607,6 @@ class PlayerActivity : AppCompatActivity() {
     private fun playCurrent() {
         val p = player ?: return
         val u = candidates.getOrNull(candIdx) ?: return
-        firstVideoFrameRendered = false
-        demarrageOk = false
         // On laisse ExoPlayer auto-detecter le format (extension + Content-Type + redirections).
         // Forcer le MIME pouvait casser un .ts qui redirige en realite vers du HLS.
         p.setMediaItem(buildMediaItem(u))
