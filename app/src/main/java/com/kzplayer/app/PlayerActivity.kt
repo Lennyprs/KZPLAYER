@@ -355,26 +355,21 @@ class PlayerActivity : AppCompatActivity() {
         // v388 : un morceau de flux qui repond mal est reessaye plusieurs fois avant
         // d abandonner (sur les connexions instables l image se figeait tout de suite).
         val errPolicy = androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(3)
-        val mediaSourceFactory = if (isVod) {
-            // Films / episodes : lecteur VOD standard. Pas de flags TS live, sinon certains VOD
-            // chargent la duree mais restent figes sans son.
-            androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpFactory)
-                .setLoadErrorHandlingPolicy(errPolicy)
-        } else {
-            // Live IPTV : beaucoup de flux sont du MPEG-TS brut sans IDR/AUD.
-            val extractors = androidx.media3.extractor.DefaultExtractorsFactory()
-                .setTsExtractorFlags(
-                    androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
-                        androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
-                )
-            androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpFactory, extractors)
-                .setLoadErrorHandlingPolicy(errPolicy)
-        }
+        // v413 : extracteur Media3 strictement standard pour le direct ET la VOD.
+        // Les flags TS ALLOW_NON_IDR / DETECT_ACCESS_UNITS forces par KZ peuvent
+        // produire une premiere frame puis bloquer la video sur certains flux,
+        // alors que l audio continue. On laisse Media3 choisir ses options natives.
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpFactory)
+            .setLoadErrorHandlingPolicy(errPolicy)
+
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
         // Android choisit le decodeur adapte au firmware, avec repli natif si
         // l initialisation echoue. FFmpeg reste uniquement un secours audio.
         val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
             .setEnableDecoderFallback(true)
+            // v413 : evite le gel MediaCodec "premiere frame + son uniquement"
+            // observe sur certains boitiers avec la file asynchrone Android.
+            .forceDisableMediaCodecAsynchronousQueueing()
             .setExtensionRendererMode(
                 androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             )
@@ -579,9 +574,7 @@ class PlayerActivity : AppCompatActivity() {
         if (isLiveMode) recoveryHandler.postDelayed(stallWatchdog, 2000)
         // v389 : surveillance du demarrage (rond de chargement sans fin).
         recoveryHandler.postDelayed(startupWatchdog, 9000)
-        // v412 : detecte le cas son actif + meme frame video pendant 3,5 s.
-        lastFramesTs = SystemClock.elapsedRealtime()
-        recoveryHandler.postDelayed(frozenImageWatchdog, 3000L)
+        // v413 : aucun watchdog video ne relance ou ne change le flux.
     }
 
     private fun playCurrent() {
@@ -674,11 +667,9 @@ class PlayerActivity : AppCompatActivity() {
         demarrageEssais = 0
         recoveryHandler.removeCallbacks(startupWatchdog)
         recoveryHandler.removeCallbacks(stallWatchdog)
-        recoveryHandler.removeCallbacks(frozenImageWatchdog)
         playCurrent()
         showTopBarTemporarily()
         recoveryHandler.postDelayed(startupWatchdog, 9000)
-        recoveryHandler.postDelayed(frozenImageWatchdog, 3000L)
         recoveryHandler.postDelayed(stallWatchdog, 2000)
     }
 
@@ -931,29 +922,25 @@ class PlayerActivity : AppCompatActivity() {
     private fun buildCandidates(url: String): List<String> {
         val list = LinkedHashSet<String>()
         fun addVariants(u: String) {
+            list.add(u)
             val q = u.indexOf('?')
             val path = if (q >= 0) u.substring(0, q) else u
             val query = if (q >= 0) u.substring(q) else ""
             when {
                 path.endsWith(".ts", true) -> {
-                    // v412 : HLS d abord. Sur le flux filme, le TS brut rend une
-                    // seule frame puis uniquement l audio, sans erreur ExoPlayer.
                     list.add(path.dropLast(3) + ".m3u8" + query)
-                    list.add(u)
                     list.add(path.dropLast(3) + query)
                 }
                 path.endsWith(".m3u8", true) -> {
-                    list.add(u)
                     list.add(path.dropLast(5) + ".ts" + query)
                     list.add(path.dropLast(5) + query)
                 }
                 else -> {
                     val lastSeg = path.substringAfterLast('/')
                     if (!lastSeg.contains('.')) {
-                        list.add(path + ".m3u8" + query)
-                        list.add(u)
                         list.add(path + ".ts" + query)
-                    } else list.add(u)
+                        list.add(path + ".m3u8" + query)
+                    }
                 }
             }
         }
