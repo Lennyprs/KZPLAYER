@@ -53,7 +53,7 @@ object VideoDecoderPref {
     fun label(value: String): String = when (value) {
         SOFTWARE -> "Logiciel (compatibilit\u00e9 maximale)"
         HARDWARE -> "Mat\u00e9riel (acc\u00e9l\u00e9ration GPU)"
-        else -> "Auto (logiciel prioritaire)"
+        else -> "Auto (compatibilite maximale)"
     }
 
     fun description(value: String): String = when (value) {
