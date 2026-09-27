@@ -47,6 +47,10 @@ class BrowseActivity : BaseActivity() {
     // donc l ouverture de l ecran est immediate.
     private var srvOpen: String = ""
     private val srvCatCache = HashMap<String, List<Category>>()
+    // v414 : categories COMPLETES par serveur pour le bouton Categories en multiliste.
+    // srvCatCache contient la version deja filtree pour le menu de gauche ; ce cache-ci
+    // conserve toutes les categories afin de pouvoir les afficher/masquer a nouveau.
+    private val srvManageCatCache = HashMap<String, List<Category>>()
     private var allKind: String = "live"
     private var voicePlay: String = ""
     private var voiceTriedPlay = false
@@ -402,9 +406,76 @@ class BrowseActivity : BaseActivity() {
     // Selecteur 2 colonnes : gauche "Categories" (pool) / droite "A afficher" (liste blanche).
     // Clique une ligne pour la deplacer d'un cote a l'autre. Vide a droite = tout est affiche.
     private fun showManageCategoriesDialog() {
+        val multi = MultiListPref.isAll(this) && Session.playlists.size > 1
+        if (multi) {
+            showManageCategoriesServerPicker()
+            return
+        }
         val pl = Session.current ?: return
-        val all = lastRealCategories
-        if (all.isEmpty()) { msgTv.text = "Aucune categorie a gerer ici."; return }
+        showManageCategoriesFor(pl, lastRealCategories)
+    }
+
+    // v414 : en multiliste, le premier ecran affiche les NOMS DES SERVEURS.
+    // Le choix d un serveur ouvre ensuite exactement le meme gestionnaire que le mode simple.
+    private fun showManageCategoriesServerPicker() {
+        val lists = Session.playlists
+        if (lists.isEmpty()) { msgTv.text = "Aucun serveur disponible."; return }
+        val labels = lists.map { p ->
+            val type = when (p.type) { "m3u" -> "M3U"; "stalker" -> "Stalker"; else -> "Xtream" }
+            p.nom + "   (" + type + ")"
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Choisir un serveur")
+            .setItems(labels) { d, which ->
+                d.dismiss()
+                lists.getOrNull(which)?.let { loadManageCategoriesFor(it) }
+            }
+            .setNegativeButton("Annuler", null)
+            .show()
+    }
+
+    // Charge toutes les categories du serveur choisi sans changer le serveur actif.
+    // Le cache evite un nouvel appel reseau lorsqu on revient sur le meme serveur.
+    private fun loadManageCategoriesFor(pl: Playlist) {
+        val cached = srvManageCatCache[pl.id]
+        if (cached != null) {
+            showManageCategoriesFor(pl, cached)
+            return
+        }
+        setLoading(true)
+        msgTv.text = "Chargement des categories de " + pl.nom + "..."
+        lifecycleScope.launch {
+            val realKind = if (kind == "replay") "live" else kind
+            val raw = try {
+                kotlinx.coroutines.withTimeoutOrNull(20000L) {
+                    when (pl.type) {
+                        "m3u" -> Api.m3uCategories(pl, realKind)
+                        "stalker" -> Api.stalkerCategories(pl, realKind)
+                        else -> Api.xtreamCategories(pl, realKind)
+                    }
+                } ?: emptyList()
+            } catch (_: Throwable) { emptyList<Category>() }
+            val all = raw.filter { !it.id.startsWith("__") }
+                .distinctBy { it.name.lowercase().trim() }
+                .sortedBy { it.name.lowercase() }
+            srvManageCatCache[pl.id] = all
+            setLoading(false)
+            msgTv.text = ""
+            if (all.isEmpty()) {
+                msgTv.text = "Aucune categorie disponible sur " + pl.nom + "."
+                return@launch
+            }
+            // Synchronise aussi la liste des noms avec le panel, sans bloquer le dialogue.
+            val names = all.map { it.name }
+            val lic = DeviceIdentity.licenseCode(this@BrowseActivity)
+            lifecycleScope.launch { Api.reportCategories(lic, pl.id, realKind, names) }
+            showManageCategoriesFor(pl, all)
+        }
+    }
+
+    private fun showManageCategoriesFor(pl: Playlist, allInput: List<Category>) {
+        val all = allInput.filter { !it.id.startsWith("__") }
+        if (all.isEmpty()) { msgTv.text = "Aucune categorie a gerer sur " + pl.nom + "."; return }
         val shownNames = effectiveShown(pl)
         val left = java.util.ArrayList<Category>()
         val right = java.util.ArrayList<Category>()
@@ -477,7 +548,7 @@ class BrowseActivity : BaseActivity() {
         render()
 
         AlertDialog.Builder(this)
-            .setTitle("Cat\u00e9gories du serveur")
+            .setTitle("Cat\u00e9gories - " + pl.nom)
             .setView(root)
             .setPositiveButton("Valider") { d, _ ->
                 val chosen = right.map { it.name }
@@ -487,7 +558,16 @@ class BrowseActivity : BaseActivity() {
                 val realK = if (kind == "replay") "live" else kind
                 lifecycleScope.launch { Api.setShown(lic, pl.id, realK, chosen) }
                 d.dismiss()
-                loadCategories()
+                if (MultiListPref.isAll(this) && Session.playlists.size > 1) {
+                    // Refiltre immediatement le menu de ce serveur sans perdre les caches
+                    // ni changer la liste active ou la categorie actuellement ouverte.
+                    srvCatCache[pl.id] = filterHiddenCategories(all, pl)
+                    categories = serverRows()
+                    bindCategories()
+                    msgTv.text = "Categories de " + pl.nom + " mises a jour."
+                } else {
+                    loadCategories()
+                }
             }
             .setNegativeButton("Annuler", null)
             .show()
