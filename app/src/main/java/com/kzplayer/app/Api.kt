@@ -644,41 +644,44 @@ object Api {
         java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE).format(java.util.Date(ms))
     } catch (e: Exception) { "" }
 
-    // Verifie si une liste est active, expiree, ou ne repond plus.
-    // Retourne (statut, message) avec statut = "ok" / "expired" / "down".
+    // v416 : ne declare JAMAIS une liste expiree/inactive sur une simple erreur reseau.
+    // Seuls le statut explicite du fournisseur ou une date depassee peuvent le confirmer.
     suspend fun playlistHealth(pl: Playlist): Pair<String, String> = withContext(Dispatchers.IO) {
         try {
             when (pl.type) {
                 "m3u" -> {
                     val cats = m3uCategories(pl, "live")
-                    if (cats.isEmpty()) Pair("down", "Aucune cha\u00eene renvoy\u00e9e") else Pair("ok", "")
+                    if (cats.isEmpty()) Pair(PlaylistHealth.UNKNOWN, "Vérification temporairement impossible")
+                    else Pair(PlaylistHealth.OK, "")
                 }
                 "stalker" -> {
                     val cats = stalkerCategories(pl, "live")
-                    if (cats.isEmpty()) Pair("down", "Portail sans r\u00e9ponse") else Pair("ok", "")
+                    if (cats.isEmpty()) Pair(PlaylistHealth.UNKNOWN, "Portail temporairement indisponible")
+                    else Pair(PlaylistHealth.OK, "")
                 }
                 else -> {
                     val url = pl.serverUrl.trimEnd(chr47()) + "/player_api.php?username=" + enc(pl.username) + "&password=" + enc(pl.password)
                     val obj = httpObject(url)
                     val info = obj.optJSONObject("user_info")
-                    if (info == null) Pair("down", "Serveur injoignable")
+                    if (info == null) Pair(PlaylistHealth.UNKNOWN, "Serveur temporairement injoignable")
                     else {
-                        val auth = info.optInt("auth", 1)
-                        val st = info.optString("status", "")
+                        val auth = info.optInt("auth", -1)
+                        val st = info.optString("status", "").trim()
                         val expMs = (info.optString("exp_date", "").toLongOrNull() ?: 0L) * 1000L
                         val date = if (expMs > 0L) frDate(expMs) else ""
                         when {
-                            auth == 0 -> Pair("expired", "Identifiants refus\u00e9s")
-                            st.equals("Expired", true) -> Pair("expired", if (date.isBlank()) "" else "Fin : " + date)
-                            st.equals("Banned", true) || st.equals("Disabled", true) -> Pair("expired", "Compte bloqu\u00e9")
-                            expMs > 0L && expMs < System.currentTimeMillis() -> Pair("expired", "Fin : " + date)
-                            else -> Pair("ok", if (date.isBlank()) "" else "Jusqu au " + date)
+                            st.equals("Expired", true) -> Pair(PlaylistHealth.EXPIRED, if (date.isBlank()) "Confirmé par le fournisseur" else "Fin : " + date)
+                            expMs > 0L && expMs < System.currentTimeMillis() -> Pair(PlaylistHealth.EXPIRED, "Fin : " + date)
+                            st.equals("Banned", true) || st.equals("Disabled", true) || st.equals("Inactive", true) ->
+                                Pair(PlaylistHealth.INACTIVE, "Confirmé par le fournisseur")
+                            auth == 1 || st.equals("Active", true) -> Pair(PlaylistHealth.OK, if (date.isBlank()) "" else "Jusqu au " + date)
+                            else -> Pair(PlaylistHealth.UNKNOWN, "Statut non confirmé par le fournisseur")
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            Pair("down", e.message ?: "Erreur r\u00e9seau")
+            Pair(PlaylistHealth.UNKNOWN, "Erreur réseau temporaire")
         }
     }
 

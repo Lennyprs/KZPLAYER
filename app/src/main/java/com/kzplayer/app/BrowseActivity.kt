@@ -319,6 +319,7 @@ class BrowseActivity : BaseActivity() {
                     }
                 } ?: emptyList()
             } catch (e: Exception) { emptyList<Category>() }
+            CategorySync.report(this@BrowseActivity, pl, allKind, base)
             val visible = filterHiddenCategories(base, pl).filter { !it.id.startsWith("__") }
             srvCatCache[plId] = visible
             setLoading(false)

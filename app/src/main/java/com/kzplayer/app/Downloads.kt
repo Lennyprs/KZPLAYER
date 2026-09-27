@@ -282,8 +282,17 @@ object Downloads {
             val started = DownloadService.demarrer(
                 ctx.applicationContext, name, shownTitle, usable, cmd
             )
-            if (started) EnqueueResult(true, "Telechargement lance : " + name)
-            else EnqueueResult(false, "Demarrage impossible : " + DownloadService.lastStartError.ifBlank { "service refuse par Android" })
+            if (started) {
+                EnqueueResult(true, "Telechargement lance : " + name)
+            } else {
+                // v415 : certains boitiers interdisent les services au premier plan. Dans ce cas,
+                // on bascule automatiquement sur le gestionnaire Android pour que la tache existe
+                // quand meme dans Parametres > Telechargements.
+                val fallback = enqueue(ctx, shownTitle, usable.first(), cmd)
+                val ok = fallback.startsWith("Téléchargement lancé")
+                EnqueueResult(ok, if (ok) fallback else "Demarrage impossible : " +
+                    DownloadService.lastStartError.ifBlank { fallback })
+            }
         } catch (e: Throwable) {
             EnqueueResult(false, "Telechargement impossible : " + (e.message ?: e.javaClass.simpleName))
         }

@@ -134,6 +134,7 @@ class DownloadService : Service() {
         val f = File(dir, fic)
         p.status = ST_RUNNING
         var essais = 0
+        var erreursConsecutives = 0
         var derniereNotif = 0L
         while (essais < 5000) {
             if (annules.contains(fic)) { jobs.remove(fic); finirSiPlusRien(); return }
@@ -155,7 +156,7 @@ class DownloadService : Service() {
                     finirSiPlusRien()
                     return
                 }
-                if (code == 401 || code == 403 || code == 404 || code == 410 || code >= 500) {
+                if (code !in 200..299) {
                     p.lastError = "HTTP " + code
                     rep.close()
                     if (p.nextUrl()) {
@@ -171,6 +172,7 @@ class DownloadService : Service() {
                     }
                     continue
                 }
+                erreursConsecutives = 0
                 val contentType = (rep.header("Content-Type") ?: "").lowercase()
                 if (contentType.contains("text/html") || contentType.contains("json") || contentType.contains("xml")) {
                     p.lastError = "Reponse non video : " + contentType
@@ -231,7 +233,15 @@ class DownloadService : Service() {
                 majNotif()
                 dormir(2000L)
             } catch (e: Throwable) {
-                // Coupure reseau / timeout : on reprend au meme endroit.
+                // v415 : apres deux erreurs sans recevoir un seul octet, essaie l URL
+                // Xtream suivante au lieu de rester bloque pour toujours sur la premiere.
+                p.lastError = e.javaClass.simpleName + ": " + (e.message ?: "")
+                erreursConsecutives++
+                if (p.done <= 0L && erreursConsecutives >= 2 && p.nextUrl()) {
+                    erreursConsecutives = 0
+                    try { f.delete() } catch (_: Throwable) {}
+                    continue
+                }
                 p.status = ST_PAUSED
                 majNotif()
                 dormir(4000L)

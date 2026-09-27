@@ -89,6 +89,7 @@ abstract class NflxCatalogActivity : NtBase() {
                     "stalker" -> Api.stalkerCategories(pl, kind)
                     else -> Api.xtreamCategories(pl, kind)
                 }
+                CategorySync.report(this@NflxCatalogActivity, pl, kind, base)
                 val realCats = base.filter { !it.id.startsWith("__") }.take(maxRows)
                 setLoading(false)
                 if (realCats.isEmpty() && rows.isEmpty()) {

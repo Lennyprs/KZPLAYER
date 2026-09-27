@@ -226,15 +226,13 @@ class PlaylistSettingsActivity : BaseActivity() {
             lifecycleScope.launch {
                 val res = try { Api.playlistHealth(pl) } catch (e: Exception) { Pair(PlaylistHealth.DOWN, "") }
                 PlaylistHealth.set(this@PlaylistSettingsActivity, pl.id, res.first, res.second)
-                if (res.first != PlaylistHealth.OK) {
-                    try { Api.reportPlaylistStatus(lic, pl.id, res.first, res.second) } catch (e: Exception) {}
-                    if (pl.id == Session.current?.id) {
-                        Toast.makeText(
-                            this@PlaylistSettingsActivity,
-                            "Attention : " + PlaylistHealth.label(this@PlaylistSettingsActivity, pl.id),
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
+                try { Api.reportPlaylistStatus(lic, pl.id, res.first, res.second) } catch (_: Exception) {}
+                if (PlaylistHealth.isProblem(this@PlaylistSettingsActivity, pl.id) && pl.id == Session.current?.id) {
+                    Toast.makeText(
+                        this@PlaylistSettingsActivity,
+                        "Attention : " + PlaylistHealth.label(this@PlaylistSettingsActivity, pl.id),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
                 // v393 : met a jour SEULEMENT le label d etat de la ligne concernee
                 // pour ne pas reconstruire toute la vue (et ne pas voler le focus).

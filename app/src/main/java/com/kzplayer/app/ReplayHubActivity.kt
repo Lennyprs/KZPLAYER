@@ -147,6 +147,7 @@ class ReplayHubActivity : BaseActivity() {
                 if (pl.type == "stalker") Api.stalkerCategories(pl, "live")
                 else Api.xtreamCategories(pl, "live")
             } catch (e: Exception) { emptyList<Category>() }
+            CategorySync.report(this@ReplayHubActivity, pl, "live", base)
             cats = base.filter { !it.id.startsWith("__") }
             progress.visibility = View.GONE
             chRv.adapter?.notifyDataSetChanged()

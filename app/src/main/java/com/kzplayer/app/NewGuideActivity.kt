@@ -127,6 +127,7 @@ open class NewGuideActivity : NtBase() {
                     "stalker" -> Api.stalkerCategories(pl, "live")
                     else -> Api.xtreamCategories(pl, "live")
                 }
+                if (!multiLists) CategorySync.report(this@NewGuideActivity, pl, "live", base)
                 categories = listOf(Category("__favorites__", "Favoris")) + base.filter { !it.id.startsWith("__") }
                 catAdapter = CatAdapter(categories) { selectCategory(it) }
                 catRv.adapter = catAdapter
@@ -151,6 +152,7 @@ open class NewGuideActivity : NtBase() {
                     else -> Api.xtreamCategories(p, "live")
                 }
             } catch (e: Exception) { emptyList<Category>() }
+            CategorySync.report(this@NewGuideActivity, p, "live", cats)
             for (c in cats) {
                 if (c.id.startsWith("__")) continue
                 out.add(Category(c.id + "@@" + p.id, c.name + "   -   " + p.nom))

@@ -71,6 +71,11 @@ class ReplayProgramsActivity : BaseActivity() {
             progs = if (list.isNotEmpty()) list else ReplayApi.fallbackSlots(24)
             msgTv.text = if (list.isEmpty()) "Guide indisponible : choisis une tranche horaire." else ""
             rv.adapter?.notifyDataSetChanged()
+            // v415 : le premier choix au D-pad est toujours REGARDER, pas Telecharger.
+            rv.post {
+                rv.findViewHolderForAdapterPosition(0)?.itemView
+                    ?.findViewById<View>(R.id.replayPlayArea)?.requestFocus()
+            }
         }
     }
 
@@ -121,6 +126,7 @@ class ReplayProgramsActivity : BaseActivity() {
 
     inner class ProgAdapter : RecyclerView.Adapter<ProgAdapter.VH>() {
         inner class VH(val v: View) : RecyclerView.ViewHolder(v) {
+            val row: View = v.findViewById(R.id.replayRow)
             val playArea: View = v.findViewById(R.id.replayPlayArea)
             val time: TextView = v.findViewById(R.id.progTime)
             val title: TextView = v.findViewById(R.id.progTitle)
@@ -136,8 +142,18 @@ class ReplayProgramsActivity : BaseActivity() {
             holder.title.text = p.title
             if (p.desc.isBlank()) holder.desc.visibility = View.GONE
             else { holder.desc.visibility = View.VISIBLE; holder.desc.text = p.desc }
+            // Deux actions strictement separees : toute la fiche/zone gauche lit le replay,
+            // seul le bouton de droite lance le telechargement.
+            holder.row.setOnClickListener { playProg(p) }
             holder.playArea.setOnClickListener { playProg(p) }
             holder.download.setOnClickListener { downloadProg(p) }
+            holder.playArea.nextFocusRightId = R.id.replayDownloadBtn
+            holder.download.nextFocusLeftId = R.id.replayPlayArea
+            holder.playArea.setOnKeyListener { _, keyCode, event ->
+                val activate = keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
+                    keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER || keyCode == KeyEvent.KEYCODE_BUTTON_A
+                if (activate && event.action == KeyEvent.ACTION_UP) { playProg(p); true } else activate
+            }
             holder.download.setOnKeyListener { _, keyCode, event ->
                 val activate = keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
                     keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER || keyCode == KeyEvent.KEYCODE_BUTTON_A

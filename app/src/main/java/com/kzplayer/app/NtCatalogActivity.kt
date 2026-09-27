@@ -132,6 +132,7 @@ abstract class NtCatalogActivity : NtBase() {
                     "stalker" -> Api.stalkerCategories(pl, kind)
                     else -> Api.xtreamCategories(pl, kind)
                 }
+                if (!multiLists) CategorySync.report(this@NtCatalogActivity, pl, kind, base)
                 categories = listOf(
                     Category("__favorites__", "Favoris"),
                     Category("__recent__", "Vu r\u00e9cemment"),
@@ -168,6 +169,7 @@ abstract class NtCatalogActivity : NtBase() {
                     else -> Api.xtreamCategories(p, kind)
                 }
             } catch (e: Exception) { emptyList<Category>() }
+            CategorySync.report(this@NtCatalogActivity, p, kind, cats)
             for (c in cats) {
                 if (c.id.startsWith("__")) continue
                 out.add(Category(c.id + "@@" + p.id, c.name + "   -   " + p.nom))

@@ -90,7 +90,7 @@ class AddPlaylistActivity : BaseActivity() {
             try {
                 val res = Api.playlistHealth(pl)
                 PlaylistHealth.set(this@AddPlaylistActivity, pl.id, res.first, res.second)
-                if (res.first != PlaylistHealth.OK) Api.reportPlaylistStatus(lic, pl.id, res.first, res.second)
+                Api.reportPlaylistStatus(lic, pl.id, res.first, res.second)
             } catch (e: Exception) {}
             val msg = if (sent) "Liste enregistr\u00e9e et envoy\u00e9e au panel" else "Liste enregistr\u00e9e sur cet appareil (panel non joignable)"
             Toast.makeText(this@AddPlaylistActivity, msg, Toast.LENGTH_LONG).show()
