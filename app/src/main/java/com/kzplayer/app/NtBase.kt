@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 // Si l'appli a ete relancee (process tue), on recharge licence + serveurs avant d'afficher.
 abstract class NtBase : BaseActivity() {
     protected fun ensureSession(onReady: () -> Unit) {
+        if (Session.current == null) SessionCache.restore(this)
         if (Session.current != null) { onReady(); return }
         val existing = Session.playlists.firstOrNull()
         if (existing != null) { Session.current = existing; onReady(); return }
@@ -23,7 +24,8 @@ abstract class NtBase : BaseActivity() {
                     LicenseGuard.rememberOk(this@NtBase, res.expiration)
                     Session.playlists = LocalPlaylists.merge(res.playlists)
                     Session.expiration = res.expiration
-                    Session.current = res.playlists.firstOrNull()
+                    Session.current = Session.playlists.firstOrNull()
+                    SessionCache.save(this@NtBase)
                 }
             } catch (e: Exception) {}
             onReady()

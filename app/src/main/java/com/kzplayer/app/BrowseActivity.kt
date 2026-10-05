@@ -372,12 +372,7 @@ class BrowseActivity : BaseActivity() {
         lastBaseCategories = base
         // On transmet la liste des categories de ce serveur au backend pour que le panel puisse
         // les afficher en cases a cocher (best-effort, sans bloquer l'UI).
-        val names = lastRealCategories.map { it.name }
-        if (names.isNotEmpty()) {
-            val lic = DeviceIdentity.licenseCode(this)
-            val realK = if (kind == "replay") "live" else kind
-            lifecycleScope.launch { Api.reportCategories(lic, pl.id, realK, names) }
-        }
+        CategorySync.report(this, pl, kind, base)
         return filterHiddenCategories(withSpecialCategories(base), pl)
     }
 
@@ -466,10 +461,7 @@ class BrowseActivity : BaseActivity() {
                 msgTv.text = "Aucune categorie disponible sur " + pl.nom + "."
                 return@launch
             }
-            // Synchronise aussi la liste des noms avec le panel, sans bloquer le dialogue.
-            val names = all.map { it.name }
-            val lic = DeviceIdentity.licenseCode(this@BrowseActivity)
-            lifecycleScope.launch { Api.reportCategories(lic, pl.id, realKind, names) }
+            CategorySync.report(this@BrowseActivity, pl, realKind, all)
             showManageCategoriesFor(pl, all)
         }
     }

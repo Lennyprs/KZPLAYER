@@ -27,7 +27,6 @@ class PlaylistSettingsActivity : BaseActivity() {
         findViewById<TextView>(R.id.licenseTv).text = DeviceIdentity.licenseCode(this)
 
         renderPlaylists()
-        checkHealth()
         if (Session.playlists.isEmpty()) {
             lifecycleScope.launch {
                 try {
@@ -201,6 +200,7 @@ class PlaylistSettingsActivity : BaseActivity() {
             return
         }
         Session.current = pl
+        SessionCache.save(this)
         Toast.makeText(this, "Liste active : ${pl.nom}", Toast.LENGTH_SHORT).show()
         val cls = ThemePref.homeClass(this)
         startActivity(Intent(this, cls).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
@@ -215,31 +215,9 @@ class PlaylistSettingsActivity : BaseActivity() {
         if (renderedSignature != computeSignature()) renderPlaylists()
     }
 
-    // v391 : verifie chaque liste (expiree / hors service), le signale dans l app
-    // et l envoie au panel utilisateur.
-    // v393 : NE rebuild PLUS toute la vue apres CHAQUE health check (c est ce qui
-    // ramenait le curseur sur le bouton "Ajouter" quand on descendait). A la place,
-    // on met a jour uniquement le label d etat de la ligne concernee.
-    private fun checkHealth() {
-        val lic = DeviceIdentity.licenseCode(this)
-        for (pl in Session.playlists.toList()) {
-            lifecycleScope.launch {
-                val res = try { Api.playlistHealth(pl) } catch (e: Exception) { Pair(PlaylistHealth.DOWN, "") }
-                PlaylistHealth.set(this@PlaylistSettingsActivity, pl.id, res.first, res.second)
-                try { Api.reportPlaylistStatus(lic, pl.id, res.first, res.second) } catch (_: Exception) {}
-                if (PlaylistHealth.isProblem(this@PlaylistSettingsActivity, pl.id) && pl.id == Session.current?.id) {
-                    Toast.makeText(
-                        this@PlaylistSettingsActivity,
-                        "Attention : " + PlaylistHealth.label(this@PlaylistSettingsActivity, pl.id),
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-                // v393 : met a jour SEULEMENT le label d etat de la ligne concernee
-                // pour ne pas reconstruire toute la vue (et ne pas voler le focus).
-                updateHealthLabelInPlace(pl.id)
-            }
-        }
-    }
+    // v417 : aucun test fournisseur en ouvrant les parametres. Ces appels concurrents
+    // pouvaient perturber une session de portail et ne prouvaient pas la lecture.
+    // CategorySync observe les chargements normaux, sans ajouter de requete fournisseur.
 
     // v393 : ajoute / met a jour le petit label "Actif / Hors service / ..." dans la
     // ligne d une playlist, sans rebuild global. Silencieux si la ligne n existe pas.

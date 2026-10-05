@@ -81,6 +81,7 @@ class PlaylistActivity : BaseActivity() {
 
             row.setOnClickListener {
                 Session.current = pl
+                SessionCache.save(this)
                 finish()
             }
             container.addView(row)

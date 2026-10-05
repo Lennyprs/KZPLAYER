@@ -24,7 +24,10 @@ object AutoReloader {
                     LicenseGuard.rememberOk(app, res.expiration)
                     Session.playlists = LocalPlaylists.merge(res.playlists)
                     Session.expiration = res.expiration
-                    if (Session.current == null || Session.playlists.none { it.id == Session.current?.id }) Session.current = Session.playlists.firstOrNull()
+                    val selectedId = Session.current?.id
+                    Session.current = Session.playlists.firstOrNull { it.id == selectedId }
+                        ?: Session.playlists.firstOrNull()
+                    SessionCache.save(app)
                     prefs.edit().putLong(KEY_LAST, System.currentTimeMillis()).apply()
                     ok = true
                 }

@@ -25,8 +25,11 @@ class KzApp : Application(), ImageLoaderFactory {
         // qu'Api.kt (ou toute autre partie de l'app) ne construise ses OkHttpClient.
         try { DohDns.init(this) } catch (_: Exception) {}
         try { Api.cfProxyBase = Config.currentCfProxyUrl(this) } catch (_: Exception) {}
-        try { LocalPlaylists.init(this)
-        AutoReloader.runIfNeeded(this) } catch (_: Exception) {}
+        try {
+            LocalPlaylists.init(this)
+            PlaylistHealth.resetLegacy(this)
+            SessionCache.restore(this)
+        } catch (_: Exception) {}
     }
 
     override fun newImageLoader(): ImageLoader =

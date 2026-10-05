@@ -51,9 +51,9 @@ class MainActivity : BaseActivity() {
                     LicenseGuard.rememberOk(this@MainActivity, res.expiration)
                     Session.playlists = LocalPlaylists.merge(res.playlists)
                     Session.expiration = res.expiration
-                    if (Session.current == null || Session.playlists.none { it.id == Session.current?.id }) {
-                        Session.current = Session.playlists.firstOrNull()
-                    }
+                    val selectedId = Session.current?.id
+                    Session.current = Session.playlists.firstOrNull { it.id == selectedId }
+                        ?: Session.playlists.firstOrNull()
                     SessionCache.save(this@MainActivity) // v375 : cache local des serveurs
                     startActivity(Intent(this@MainActivity, ThemePref.homeClass(this@MainActivity)))
                 } else if (LicenseGuard.wasRecentlyActive(this@MainActivity)) {

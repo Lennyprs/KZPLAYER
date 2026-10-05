@@ -15,12 +15,27 @@ object PlaylistHealth {
     private fun prefs(ctx: Context) =
         ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    // Invalide une seule fois les anciens diagnostics negatifs non confirmes.
+    fun resetLegacy(ctx: Context) {
+        val p = prefs(ctx)
+        if (p.getBoolean("observation_v417", false)) return
+        val e = p.edit()
+        for ((key, value) in p.all) {
+            if (key.startsWith("s_") && value != OK) {
+                val id = key.removePrefix("s_")
+                e.remove(key).remove("m_" + id).remove("t_" + id)
+            }
+        }
+        e.putBoolean("observation_v417", true).apply()
+    }
+
     fun set(ctx: Context, id: String, status: String, message: String) {
         val safe = when (status) {
             OK, EXPIRED, INACTIVE, UNKNOWN -> status
             else -> UNKNOWN
         }
         try {
+            if (safe == UNKNOWN && PlaylistHealth.status(ctx, id) == OK) return
             prefs(ctx).edit()
                 .putString("s_" + id, safe)
                 .putString("m_" + id, message)
@@ -44,10 +59,10 @@ object PlaylistHealth {
         val msg = message(ctx, id)
         val suffix = if (msg.isBlank()) "" else "  •  " + msg
         return when (status(ctx, id)) {
-            OK -> "Liste active" + suffix
+            OK -> "Catalogue accessible au dernier chargement" + suffix
             EXPIRED -> "Liste expirée" + suffix
             INACTIVE -> "Liste inactive" + suffix
-            UNKNOWN, DOWN -> "Statut non confirmé" + suffix
+            UNKNOWN, DOWN -> "Vérification en attente — accès à la liste autorisé"
             else -> ""
         }
     }
