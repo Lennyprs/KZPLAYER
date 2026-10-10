@@ -82,6 +82,8 @@ abstract class NtCatalogActivity : NtBase() {
         heroDesc = findViewById(R.id.heroDesc)
         catRv.layoutManager = LinearLayoutManager(this)
         catRv.setHasFixedSize(true)
+        catRv.itemAnimator = null
+        itemRv.itemAnimator = null
         glm = GridLayoutManager(this, computeSpan())
         itemRv.layoutManager = glm
         // Taille de grille fixe + cache plus grand : moins de recalculs pendant le defilement
@@ -250,14 +252,21 @@ abstract class NtCatalogActivity : NtBase() {
                         if (!multiMode || epoch != searchEpoch) return@withContext
                         filtered = merged
                         itemAdapter?.submit(filtered)
-                        filtered.firstOrNull()?.let { updateHero(it) }
+                        if (!itemRv.hasFocus()) filtered.firstOrNull()?.let { updateHero(it) }
                         if (merged.isNotEmpty()) { setLoading(false); msgTv.text = "" }
                         else if (done >= total) { setLoading(false); msgTv.text = "Aucun resultat pour \"$q\"." }
                         else msgTv.text = ""
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { msgTv.text = "Erreur : ${e.message}"; setLoading(false) }
+                withContext(Dispatchers.Main) {
+                    if (multiMode && epoch == searchEpoch) {
+                        msgTv.text = "Erreur : ${e.message}"
+                        setLoading(false)
+                    }
+                }
             }
         }
     }
@@ -309,21 +318,7 @@ abstract class NtCatalogActivity : NtBase() {
     inner class TileAdapter(val onClick: (Item) -> Unit) : RecyclerView.Adapter<TileAdapter.VH>() {
         private val data = ArrayList<Item>()
         fun submit(list: List<Item>) {
-            // Ajout incremental : si la liste ne fait que s'allonger (meme prefixe), on insere
-            // seulement les nouveaux elements au lieu de tout reconstruire. notifyDataSetChanged
-            // rebind TOUTE la grille et recharge toutes les affiches a chaque lot Stalker -> lenteur.
-            if (list.size > data.size && isPrefix(data, list)) {
-                val start = data.size
-                data.addAll(list.subList(start, list.size))
-                notifyItemRangeInserted(start, list.size - start)
-                return
-            }
-            data.clear(); data.addAll(list); notifyDataSetChanged()
-        }
-        private fun isPrefix(old: List<Item>, new: List<Item>): Boolean {
-            if (new.size < old.size) return false
-            for (i in old.indices) if (old[i] != new[i]) return false
-            return true
+            ListUpdates.submit(this, data, list, ListUpdates::itemKey)
         }
         inner class VH(val v: View) : RecyclerView.ViewHolder(v) {
             val name: TextView = v.findViewById(R.id.nameTv)

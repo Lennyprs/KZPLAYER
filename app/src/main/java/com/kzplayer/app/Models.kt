@@ -44,7 +44,7 @@ data class Item(
     val catchup: Boolean = false,   // chaine disponible en replay / catch-up
     val serverLabel: String = "",   // recherche multi-serveurs : "Serveur 1 / Serveur 2"
     val ownerPlaylistId: String = "" // serveur d'origine de l'item (pour basculer dessus)
-)
+) : java.io.Serializable
 
 data class VodMeta(val plot: String, val duration: String)
 

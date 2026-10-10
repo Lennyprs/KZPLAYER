@@ -322,6 +322,7 @@ class BrowseActivity : BaseActivity() {
             CategorySync.report(this@BrowseActivity, pl, allKind, base)
             val visible = filterHiddenCategories(base, pl).filter { !it.id.startsWith("__") }
             srvCatCache[plId] = visible
+            if (srvOpen != plId) return@launch
             setLoading(false)
             categories = serverRows()
             bindCategories()
@@ -347,8 +348,9 @@ class BrowseActivity : BaseActivity() {
                 val cur = res.playlists.firstOrNull { it.id == plId }
                 if (cur != null) {
                     Session.playlists = LocalPlaylists.merge(res.playlists)
-                    Session.current = cur
-                    if (!multiMode && lastBaseCategories.isNotEmpty()) {
+                    if (Session.current?.id == plId) Session.current = cur
+                    if (!multiMode && !MultiListPref.isAll(this@BrowseActivity) &&
+                        Session.current?.id == plId && lastBaseCategories.isNotEmpty()) {
                         categories = filterHiddenCategories(withSpecialCategories(lastBaseCategories), cur)
                         bindCategories()
                     }
@@ -567,8 +569,13 @@ class BrowseActivity : BaseActivity() {
     }
 
     private fun bindCategories() {
-        catAdapter = CatAdapter(categories) { cat -> selectCategory(cat) }
-        catRv.adapter = catAdapter
+        val adapter = catAdapter
+        if (adapter == null) {
+            catAdapter = CatAdapter(categories) { cat -> selectCategory(cat) }
+            catRv.adapter = catAdapter
+        } else {
+            adapter.submit(categories)
+        }
     }
 
     private fun selectCategory(cat: Category) {
@@ -578,8 +585,12 @@ class BrowseActivity : BaseActivity() {
             toggleServer(cat.id.substring(7))
             return
         }
+        val previousCat = selectedCat
         selectedCat = cat.id
-        catAdapter?.notifyDataSetChanged()
+        val previousIndex = categories.indexOfFirst { it.id == previousCat }
+        val selectedIndex = categories.indexOfFirst { it.id == cat.id }
+        if (previousIndex >= 0) catAdapter?.notifyItemChanged(previousIndex)
+        if (selectedIndex >= 0 && selectedIndex != previousIndex) catAdapter?.notifyItemChanged(selectedIndex)
         // v359 : en mode multi-listes, la categorie porte l identifiant de sa liste.
         // On rebascule la liste active sur la bonne liste avant de charger le contenu,
         // ce qui garantit une lecture identique au mode une seule liste.
@@ -678,6 +689,9 @@ class BrowseActivity : BaseActivity() {
     }
 
     private fun applyFilter() {
+        // Un chargement de categorie termine en retard ne doit pas remplacer
+        // les resultats de la recherche multi-serveurs en cours.
+        if (multiMode) return
         val q = cleanSearch(searchEt.text.toString())
         val searchHadFocus = searchEt.hasFocus()
         // La grille a-t-elle le focus AVANT la mise a jour ? Si oui et qu'il saute hors
@@ -705,7 +719,8 @@ class BrowseActivity : BaseActivity() {
         filtered = list
         itemAdapter?.submit(filtered)
         if (searchHadFocus) {
-            searchEt.post { searchEt.requestFocus() }
+            // La saisie conserve son focus naturellement ; pas de callback qui le
+            // reprendrait apres que l'utilisateur est descendu dans les resultats.
         } else if (focusItemsAfterLoad && filtered.isNotEmpty()) {
             focusItemsAfterLoad = false
             itemRv.post {
@@ -767,8 +782,15 @@ class BrowseActivity : BaseActivity() {
                         }
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { msgTv.text = "Erreur : ${e.message}"; setLoading(false) }
+                withContext(Dispatchers.Main) {
+                    if (multiMode && epoch == searchEpoch) {
+                        msgTv.text = "Erreur : ${e.message}"
+                        setLoading(false)
+                    }
+                }
             }
         }
     }
@@ -871,7 +893,7 @@ class BrowseActivity : BaseActivity() {
         }
         if (item.kind == "movie") {
             Session.detailItem = item
-            startActivity(Intent(this, DetailActivity::class.java))
+            startActivity(DetailActivity.intentFor(this, item))
             return
         }
         val plCur = Session.current
@@ -999,8 +1021,12 @@ class BrowseActivity : BaseActivity() {
         if (filtered.isNotEmpty() && currentFocus == null) keepFocusOnItems()
     }
 
-    inner class CatAdapter(val data: List<Category>, val onClick: (Category) -> Unit) :
+    inner class CatAdapter(initial: List<Category>, val onClick: (Category) -> Unit) :
         RecyclerView.Adapter<CatAdapter.VH>() {
+        private val data = ArrayList<Category>(initial)
+        init { setHasStableIds(true) }
+        override fun getItemId(position: Int): Long = data[position].id.fold(1125899906842597L) { h, c -> h * 31L + c.code }
+        fun submit(list: List<Category>) = ListUpdates.submit(this, data, list) { it.id }
         inner class VH(val tv: TextView) : RecyclerView.ViewHolder(tv)
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val tv = LayoutInflater.from(parent.context)
@@ -1014,7 +1040,11 @@ class BrowseActivity : BaseActivity() {
             val sel = c.id == selectedCat
             holder.tv.isSelected = sel
             holder.tv.setTextColor(ContextCompat.getColor(holder.tv.context, if (sel) R.color.text else R.color.muted))
-            holder.tv.setOnClickListener { focusItemsAfterLoad = true; onClick(c) }
+            holder.tv.setOnClickListener {
+                // Ouvrir un serveur ne doit pas programmer un saut vers la grille.
+                focusItemsAfterLoad = !c.id.startsWith("__srv__")
+                onClick(c)
+            }
         }
     }
 
@@ -1031,24 +1061,7 @@ class BrowseActivity : BaseActivity() {
         private val data = ArrayList<Item>(initialData)
 
         fun submit(newData: List<Item>) {
-            // Ajout incremental : si la nouvelle liste ne fait que PROLONGER l'actuelle
-            // (meme prefixe), on insere uniquement les nouveaux elements. notifyDataSetChanged
-            // reconstruit TOUTE la grille et fait sauter/perdre le focus de la telecommande
-            // pendant le chargement page par page (Stalker) -> c'etait le bug de navigation.
-            if (newData.size > data.size && isPrefix(data, newData)) {
-                val start = data.size
-                data.addAll(newData.subList(start, newData.size))
-                notifyItemRangeInserted(start, newData.size - start)
-                return
-            }
-            data.clear()
-            data.addAll(newData)
-            notifyDataSetChanged()
-        }
-        private fun isPrefix(old: List<Item>, new: List<Item>): Boolean {
-            if (new.size < old.size) return false
-            for (i in old.indices) if (old[i] != new[i]) return false
-            return true
+            ListUpdates.submit(this, data, newData, ListUpdates::itemKey)
         }
         inner class TileVH(val v: View) : RecyclerView.ViewHolder(v) {
             val name: TextView = v.findViewById(R.id.nameTv)

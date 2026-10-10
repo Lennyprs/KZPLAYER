@@ -359,7 +359,15 @@ class PlayerActivity : AppCompatActivity() {
         // Les flags TS ALLOW_NON_IDR / DETECT_ACCESS_UNITS forces par KZ peuvent
         // produire une premiere frame puis bloquer la video sur certains flux,
         // alors que l audio continue. On laisse Media3 choisir ses options natives.
-        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(httpFactory)
+        // v418 : un fichier telecharge n'est pas une URL HTTP. DefaultDataSource
+        // ouvre file:// / content:// via les sources locales Media3, sans changer
+        // le chemin reseau, les codecs, les surfaces ou les extracteurs du direct.
+        val localScheme = Uri.parse(watchUrl).scheme?.lowercase()
+        val sourceFactory: androidx.media3.datasource.DataSource.Factory =
+            if (localScheme == "file" || localScheme == "content") {
+                androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
+            } else httpFactory
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(sourceFactory)
             .setLoadErrorHandlingPolicy(errPolicy)
 
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
@@ -885,6 +893,10 @@ class PlayerActivity : AppCompatActivity() {
     // (.mkv/.avi) dans le chemin OU dans le parametre stream=1207225.mkv.
     // On tente donc les containers alternatifs sans toucher au token.
     private fun buildVodCandidates(url: String): List<String> {
+        // Un fichier local a un chemin exact : ne pas essayer des noms inventes
+        // (.mp4/.mkv/sans extension) en cas d'erreur ou de sous-titre.
+        val scheme = Uri.parse(url).scheme?.lowercase()
+        if (scheme == "file" || scheme == "content") return listOf(url)
         val list = LinkedHashSet<String>()
         list.add(url)
 

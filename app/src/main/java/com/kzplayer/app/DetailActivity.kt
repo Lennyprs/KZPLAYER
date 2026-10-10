@@ -19,12 +19,45 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class DetailActivity : BaseActivity() {
+    companion object {
+        private const val EXTRA_ITEM = "detail_item_v419"
+        private const val EXTRA_PLAYLIST = "detail_playlist_v419"
+        fun intentFor(ctx: android.content.Context, item: Item): Intent =
+            Intent(ctx, DetailActivity::class.java)
+                .putExtra(EXTRA_ITEM, item.copy(description = item.description.take(16000), summary = item.summary.take(16000)))
+                .putExtra(EXTRA_PLAYLIST, item.ownerPlaylistId.ifBlank { Session.current?.id.orEmpty() })
+    }
+    private var openedItem: Item? = null
+    private var openedPlaylistId: String = ""
+    private val metadataErrors = kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+        CrashDiagnostics.record(this, error)
+        findViewById<TextView>(R.id.detailDesc)?.text =
+            "Informations supplementaires indisponibles. Tu peux toujours essayer Lire."
+        CrashDiagnostics.showPending(this)
+    }
+    override fun onSaveInstanceState(outState: Bundle) {
+        openedItem?.let { outState.putSerializable(EXTRA_ITEM, it) }
+        outState.putString(EXTRA_PLAYLIST, openedPlaylistId)
+        super.onSaveInstanceState(outState)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_detail)
 
-        val item = Session.detailItem
-        val pl = Session.current
+        @Suppress("DEPRECATION")
+        val item = (savedInstanceState?.getSerializable(EXTRA_ITEM) as? Item)
+            ?: (intent.getSerializableExtra(EXTRA_ITEM) as? Item)
+            ?: Session.detailItem
+        val sourceId = savedInstanceState?.getString(EXTRA_PLAYLIST)
+            ?: intent.getStringExtra(EXTRA_PLAYLIST)
+            ?: item?.ownerPlaylistId.orEmpty()
+        if (Session.playlists.isEmpty() || Session.current == null) SessionCache.restore(this)
+        val pl = if (sourceId.isNotBlank()) {
+            Session.playlists.firstOrNull { it.id == sourceId }
+                ?: Session.current?.takeIf { it.id == sourceId }
+        } else Session.current
+        openedItem = item
+        openedPlaylistId = pl?.id ?: sourceId
         val title = findViewById<TextView>(R.id.detailTitle)
         val desc = findViewById<TextView>(R.id.detailDesc)
         val playBtn = findViewById<Button>(R.id.playBtn)
@@ -36,7 +69,16 @@ class DetailActivity : BaseActivity() {
 
         back.setOnClickListener { finish() }
 
-        if (item == null || pl == null) { finish(); return }
+        if (item == null || pl == null) {
+            // Ne pas fermer silencieusement la fiche ni choisir un autre serveur.
+            title.text = item?.name ?: "Fiche indisponible"
+            desc.text = "Le film ou son serveur n'a pas pu etre restaure. Retourne a la liste et selectionne a nouveau le titre."
+            playBtn.isEnabled = false
+            trailerBtn.isEnabled = false
+            downloadBtn.isEnabled = false
+            favBtn.visibility = View.GONE
+            return
+        }
 
         fun refreshFav() {
             favBtn.text = if (Favorites.isFavorite(this, item)) "\u2605 Favori" else "\u2606 Favori"
@@ -49,6 +91,7 @@ class DetailActivity : BaseActivity() {
 
         title.text = item.name
         findViewById<ImageView>(R.id.posterIv).load(item.logo) {
+            size(360, 540)
             placeholder(R.drawable.bg_tile)
             error(R.drawable.ic_movie)
             crossfade(true)
@@ -57,7 +100,7 @@ class DetailActivity : BaseActivity() {
         meta.text = if (item.duration.isNotBlank()) "Dur\u00e9e : ${item.duration}" else ""
         desc.text = "Chargement du resume..."
 
-        lifecycleScope.launch {
+        lifecycleScope.launch(metadataErrors) {
             val info = try {
                 val sid = item.streamId
                 if (pl.type == "xtream" && !sid.isNullOrBlank()) Api.xtreamVodInfo(pl, sid) else null
@@ -188,7 +231,7 @@ class DetailActivity : BaseActivity() {
         val simTitle = findViewById<TextView>(R.id.similarTitle)
         val simRv = findViewById<RecyclerView>(R.id.similarRv)
 
-        lifecycleScope.launch {
+        lifecycleScope.launch(metadataErrors) {
             val cast = try { Tmdb.castFor(item.name, false) } catch (e: Exception) { emptyList<Tmdb.CastMember>() }
             if (cast.isNotEmpty()) {
                 castTitle.visibility = View.VISIBLE
@@ -198,7 +241,7 @@ class DetailActivity : BaseActivity() {
             }
         }
 
-        lifecycleScope.launch {
+        lifecycleScope.launch(metadataErrors) {
             // v351 : on affiche les similaires des que TMDB repond (affiches TMDB),
             // exactement comme la distribution. Le catalogue de la liste de lecture
             // etait tres long a charger et retardait tout l affichage.
@@ -256,7 +299,7 @@ class DetailActivity : BaseActivity() {
             holder.name.text = c.name
             holder.role.text = c.role
             if (c.photo.isBlank()) holder.img.setImageResource(R.drawable.ic_person)
-            else holder.img.load(c.photo) { crossfade(true); error(R.drawable.ic_person) }
+            else holder.img.load(c.photo) { size(156, 156); crossfade(true); error(R.drawable.ic_person) }
         }
     }
 
@@ -281,7 +324,7 @@ class DetailActivity : BaseActivity() {
             holder.name.text = row.title
             holder.sub.visibility = View.GONE
             if (row.poster.isBlank()) holder.poster.setImageResource(R.drawable.ic_movie)
-            else holder.poster.load(row.poster) { crossfade(false); error(R.drawable.ic_movie) }
+            else holder.poster.load(row.poster) { size(256, 384); crossfade(false); error(R.drawable.ic_movie) }
             holder.itemView.setOnFocusChangeListener { v, has ->
                 val sc = if (has) 1.08f else 1f
                 v.animate().scaleX(sc).scaleY(sc).setDuration(110).start()
@@ -296,7 +339,7 @@ class DetailActivity : BaseActivity() {
                     ).show()
                 } else {
                     Session.detailItem = target
-                    startActivity(Intent(this@DetailActivity, DetailActivity::class.java))
+                    startActivity(intentFor(this@DetailActivity, target))
                 }
             }
         }
@@ -324,7 +367,7 @@ class DetailActivity : BaseActivity() {
             }
             holder.itemView.setOnClickListener {
                 Session.detailItem = it2
-                startActivity(Intent(this@DetailActivity, DetailActivity::class.java))
+                startActivity(intentFor(this@DetailActivity, it2))
             }
         }
     }
