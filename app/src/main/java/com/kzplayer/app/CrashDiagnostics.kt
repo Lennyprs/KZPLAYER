@@ -21,7 +21,7 @@ object CrashDiagnostics {
         }
     }
     fun record(ctx: Context, error: Throwable) {
-        val text = StringBuilder("KZ Player 3.3.9\n")
+        val text = StringBuilder("KZ Player 3.4.0\n")
             .append(Build.MANUFACTURER).append(" ").append(Build.MODEL)
             .append(" / Android ").append(Build.VERSION.RELEASE).append("\n")
         var cause: Throwable? = error

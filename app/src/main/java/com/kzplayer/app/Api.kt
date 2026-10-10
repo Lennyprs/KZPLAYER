@@ -44,14 +44,25 @@ object Api {
     @Volatile var cfProxyBase: String = Config.CF_PROXY_URL_DEFAULT
 
     // Cookies en memoire : indispensables pour passer la protection anti-bot du free host.
+    // v420 : ConcurrentHashMap protege la MAP, pas les ArrayList stockees dedans.
+    // Plusieurs reponses (logos/fiche/EPG/catalogue) pouvaient faire removeAll/add
+    // en parallele -> IndexOutOfBoundsException dans le thread reseau OkHttp.
+    // Verrou commun a TOUS les acces, y compris le cookie du defi JS. Aucun appel
+    // reseau sous ce verrou : on serialise seulement la copie/mutation en memoire.
     private val cookieStore = ConcurrentHashMap<String, MutableList<Cookie>>()
+    private val cookieLock = Any()
     private val cookieJar = object : CookieJar {
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            val list = cookieStore.getOrPut(url.host) { mutableListOf() }
-            for (ck in cookies) { list.removeAll { it.name == ck.name }; list.add(ck) }
+            synchronized(cookieLock) {
+                val list = cookieStore.getOrPut(url.host) { mutableListOf() }
+                for (ck in cookies) { list.removeAll { it.name == ck.name }; list.add(ck) }
+            }
         }
         override fun loadForRequest(url: HttpUrl): List<Cookie> =
-            cookieStore[url.host]?.toList() ?: emptyList()
+            synchronized(cookieLock) {
+                // Snapshot independant : OkHttp ne recoit jamais la liste mutable.
+                cookieStore[url.host]?.toList() ?: emptyList()
+            }
     }
 
     private val client: OkHttpClient = buildLenientClient()
@@ -300,9 +311,11 @@ object Api {
             val testVal = toHexStr(cipher.doFinal(hexToBytes(nums[2])))
             val cookie = Cookie.Builder().domain(url.host).path("/")
                 .name("__test").value(testVal).expiresAt(Long.MAX_VALUE).build()
-            val list = cookieStore.getOrPut(url.host) { mutableListOf() }
-            list.removeAll { it.name == "__test" }
-            list.add(cookie)
+            synchronized(cookieLock) {
+                val list = cookieStore.getOrPut(url.host) { mutableListOf() }
+                list.removeAll { it.name == "__test" }
+                list.add(cookie)
+            }
             true
         } catch (e: Exception) { false }
     }
