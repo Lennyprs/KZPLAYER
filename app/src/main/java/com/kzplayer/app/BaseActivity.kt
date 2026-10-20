@@ -10,9 +10,18 @@ import androidx.appcompat.app.AppCompatActivity
 open class BaseActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
+        RemoteBrandTheme.resume(this)
         // MainActivity peut changer d'ecran apres verification de licence : attendre
         // l'ecran suivant pour que le rapport ne disparaisse pas pendant cette navigation.
         if (this !is MainActivity) CrashDiagnostics.showPending(this)
+    }
+    override fun onPause() {
+        RemoteBrandTheme.pause(this)
+        super.onPause()
+    }
+    override fun setContentView(layoutResID: Int) {
+        super.setContentView(layoutResID)
+        RemoteBrandTheme.attach(this)
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         try { setTheme(ColorThemePref.styleRes(this)) } catch (e: Exception) {}

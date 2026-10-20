@@ -55,12 +55,12 @@ class MainActivity : BaseActivity() {
                     Session.current = Session.playlists.firstOrNull { it.id == selectedId }
                         ?: Session.playlists.firstOrNull()
                     SessionCache.save(this@MainActivity) // v375 : cache local des serveurs
-                    startActivity(Intent(this@MainActivity, ThemePref.homeClass(this@MainActivity)))
+                    startActivity(Intent(this@MainActivity, if (Session.playlists.isEmpty()) PlaylistSetupActivity::class.java else ThemePref.homeClass(this@MainActivity)))
                 } else if (LicenseGuard.wasRecentlyActive(this@MainActivity)) {
                     // Fenetre de grace : licence vue active il y a moins de 24h.
                     // On ne bloque pas l'utilisateur sur un hoquet backend / cold start.
                     Session.expiration = LicenseGuard.lastExpiration(this@MainActivity) ?: res.expiration
-                    startActivity(Intent(this@MainActivity, ThemePref.homeClass(this@MainActivity)))
+                    startActivity(Intent(this@MainActivity, if (Session.playlists.isEmpty()) PlaylistSetupActivity::class.java else ThemePref.homeClass(this@MainActivity)))
                 } else {
                     codeTv.text = res.deviceCode.ifBlank { deviceCode() }
                     statusTv.text = res.message.ifBlank {

@@ -440,6 +440,17 @@ object Api {
             )
         }
 
+    // V93 : remise d'une playlist par code, POST seulement ; identifiant de demande durable pour le rejeu.
+    suspend fun redeemActiveCode(deviceId:String, license:String, code:String, requestId:String):List<Playlist> = withContext(Dispatchers.IO) {
+        val payload=FormBody.Builder().add("action","activeCodeRedeem").add("device_id",deviceId).add("license",license).add("code",code).add("request_id",requestId).build()
+        val (status,text)=callText(Request.Builder().url(Config.LOGIN_URL).post(payload).header("Accept","application/json").build())
+        val obj=try { JSONObject(text) } catch(_:Exception) { throw IOException("Réponse serveur incertaine. Réessaie avec le même code.") }
+        if(status !in 200..299 || !obj.optBoolean("ok")) throw IOException(obj.optString("error").ifBlank { "Impossible de récupérer la playlist. Réessaie avec le même code." })
+        val playlists=parsePlaylists(obj)
+        if(playlists.isEmpty()) throw IOException("Aucune playlist reçue. Utilise Actualiser avant de réessayer.")
+        playlists
+    }
+
     // ---------------- MISE A JOUR (GitHub Releases) ----------------
     // Source prioritaire : l'API publique GitHub Releases du depot KZ Player. Le workflow
     // GitHub Actions tague chaque build "v{run_number}" et attache l'APK signe -> on
