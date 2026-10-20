@@ -1,0 +1,39 @@
+KZ PLAYER — CORRECTIF DES DELAIS GOOGLE — V97
+Application Android conservee en 3.4.5.
+
+LE JOURNAL
+Le script a depasse 60 secondes en attendant la reponse Google a la preparation de la liste de compilations. Ce n'est pas l'erreur Kotlin corrigee precedemment. Le controle GAS_URL/BRAND_CI_SECRET du journal confirme leur format/presence, pas leur validation par Google.
+Ce delai ne permet pas de conclure a un mauvais secret ni a une cause precise cote Google.
+
+CORRECTIF
+- Diagnostic initial sans ecriture, pour verifier que l'API Google repond et annonce une version compatible.
+- Ce seul diagnostic peut etre retente une fois apres une panne reseau temporaire.
+- Delai de reponse des operations de compilation porte de 60 a 180 secondes.
+- Aucun rejeu automatique des operations qui preparent, prennent en charge ou confirment une compilation.
+- En cas de reponse incertaine, aucun echec n'est declare automatiquement sur le serveur : une operation deja appliquee n'est pas annulee aveuglement.
+- Erreurs lisibles pour delai, acces HTTP refuse, page HTML de connexion, adresse/backend incompatible et reseau indisponible. Aucun secret affiche.
+- Une execution sans marque a compiler indique explicitement qu'elle n'a produit aucune APK.
+
+INSTALLATION
+1. Decompresse l'archive COMPLETE et copie son contenu a la racine de ton depot local KZPLAYER en remplacant les fichiers existants.
+2. Il faut bien ajouter le NOUVEAU fichier tools/branding/brand_transport.py, et pas uniquement remplacer build_brands.py.
+3. Depuis le dossier Git du depot :
+
+git add tools/branding/build_brands.py tools/branding/brand_transport.py A-LIRE-CORRECTIF-GOOGLE-V97.txt
+git commit -m "Corrige les delais Google des APK personnalisees"
+git push
+
+Le workflow existant est declenche par les changements dans tools/branding. Consulte la nouvelle execution, pas celle de l'ancien commit.
+Aucun changement Google Apps Script, Cloudflare ou secret n'est requis pour installer ce correctif CI. Les sources Android, le correctif Kotlin, les lecteurs, la signature et les controles APK sont conserves strictement a l'identique de la 3.4.5.
+
+SI GOOGLE RESTE INJOIGNABLE
+Un delai plus long ne peut pas reparer une panne Google ou une mauvaise adresse. Le nouveau diagnostic permet de voir a quel stade l'echec arrive.
+- Verifie que GAS_URL dans GitHub pointe vers le meme deploiement /exec actuel que tes panels. Le journal precedent indique que l'adresse provenait du secret de compatibilite, pas d'une variable de depot.
+- Dans Google Apps Script, Exécutions permet de verifier si une demande doPost est arrivee, son etat et sa duree.
+- Pour une page HTML ou HTTP 401/403, verifier le deploiement Web accessible depuis GitHub sans connexion interactive Google. Ne desactive pas les controles de cle/token du backend.
+- Si une compilation est deja indiquee en cours, actualise son etat et regarde GitHub avant toute reprise. Le correctif ne force pas l'abandon d'une compilation potentiellement valide.
+- Ne change pas les secrets sur la seule base d'un timeout. Ne partage pas leurs valeurs.
+
+VALIDATION
+17 tests reussis avec reponses reseau simulees : attente 180 secondes, aucun rejeu d'ecriture, reprise limitee du diagnostic sans ecriture, erreur HTML/JSON, HTTP 403/503, verification TLS conservee, masquage du secret et conservation de l'etat serveur apres reponse incertaine.
+Aucune compilation Android reelle ni validation de l'acces a ton deploiement Google reel n'a ete effectuee dans cette session.

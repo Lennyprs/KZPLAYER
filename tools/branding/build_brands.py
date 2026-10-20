@@ -4,15 +4,15 @@ from apply_brand import apply
 from brand_config import load_config
 ROOT=Path.cwd();REPO='Lennyprs/KZPLAYER'
 GAS,SECRET=load_config(report=True)
+from brand_transport import BackendClient, BackendError, BackendUncertain
+CLIENT=BackendClient(GAS,SECRET)
+CLAIMED=set()
 def call(action,**kwargs):
- request=urllib.request.Request(GAS,data=json.dumps(dict(action=action,secret=SECRET,**kwargs)).encode(),headers={'Content-Type':'application/json'})
- with urllib.request.urlopen(request,timeout=60) as response:data=json.load(response)
- if not data.get('ok'):raise RuntimeError(data.get('error','Erreur backend'))
- return data
+ return CLIENT.call(action,**kwargs)
 
 def cmd(args,**kwargs):return subprocess.run(args,check=True,**kwargs)
 def build(job):
- m=call('brandCiFetch',job_id=job);brand=m['brand_id'];version=int(m['version_code']);env=os.environ.copy();env.update(apply(ROOT,m))
+ m=call('brandCiFetch',job_id=job);CLAIMED.add(job);brand=m['brand_id'];version=int(m['version_code']);env=os.environ.copy();env.update(apply(ROOT,m))
  bt=sorted((Path(env['ANDROID_SDK_ROOT'])/'build-tools').glob('*'),key=lambda p:[int(x) for x in p.name.split('.') if x.isdigit()])[-1]
  cmd(['./gradlew','clean',':app:assembleRelease','--no-daemon','--stacktrace'],env=env)
  apk=ROOT/f'app-{brand}-{version}.apk';aligned=ROOT/'brand-aligned.apk';unsigned=ROOT/'app/build/outputs/apk/release/app-release-unsigned.apk'
@@ -35,14 +35,34 @@ def build(job):
  if mapping.exists():
   folder=ROOT/'brand-mappings';folder.mkdir(exist_ok=True);(folder/f'{brand}-{version}.txt').write_bytes(mapping.read_bytes())
 
-if __name__=='__main__':
- job=os.environ.get('BRAND_JOB_ID','').strip();jobs=[job] if job else call('brandCiQueueAll')['jobs'];failed=False
+def main():
+ CLIENT.probe()
+ CLAIMED.clear()
+ job=os.environ.get('BRAND_JOB_ID','').strip()
+ if job and not re.fullmatch(r'job_[a-f0-9]{64}',job):raise BackendError('Job invalide')
+ jobs=[job] if job else call('brandCiQueueAll').get('jobs')
+ if not isinstance(jobs,list) or any(not isinstance(j,str) or not re.fullmatch(r'job_[a-f0-9]{64}',j) for j in jobs):
+  raise BackendUncertain('Liste de compilations invalide. Aucun lancement local ; verifie le backend utilise.')
+ if not jobs:
+  print('Aucune marque a compiler. Aucune APK personnalisee generee par cette execution.')
+  return 0
+ failed=False
  for job in jobs:
-  if not re.fullmatch(r'job_[a-f0-9]{64}',job):raise RuntimeError('Job invalide')
   cmd(['git','restore','--source=HEAD','--worktree','--','app']);cmd(['git','clean','-fd','--','app/src/main/res'])
   try:build(job)
+  except BackendUncertain as error:
+   failed=True
+   print('::error::'+str(error))
+   print('L etat serveur est conserve : aucune declaration automatique d echec apres une reponse incertaine. Actualise le panel et consulte cette execution avant de reprendre.')
   except Exception:
    failed=True;traceback.print_exc()
-   try:call('brandCiComplete',job_id=job,success=False)
-   except Exception:pass
- if failed:raise SystemExit(1)
+   if job in CLAIMED:
+    try:call('brandCiComplete',job_id=job,success=False)
+    except BackendError as error:print('::warning::Confirmation d echec non recue : '+str(error))
+ return 1 if failed else 0
+
+if __name__=='__main__':
+ try:sys.exit(main())
+ except BackendError as error:
+  print('::error::'+str(error))
+  sys.exit(1)
