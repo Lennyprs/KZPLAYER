@@ -1,8 +1,9 @@
 import os,json,urllib.request,subprocess,base64,hashlib,re,tempfile,sys,traceback
 from pathlib import Path
 from apply_brand import apply
-ROOT=Path.cwd();REPO='Lennyprs/KZPLAYER';GAS=os.environ['GAS_URL'];SECRET=os.environ['BRAND_CI_SECRET']
-if not GAS.startswith('https://script.google.com/macros/s/') or not GAS.endswith('/exec') or len(SECRET)<32:raise RuntimeError('Configuration Google/GitHub absente ou invalide')
+from brand_config import load_config
+ROOT=Path.cwd();REPO='Lennyprs/KZPLAYER'
+GAS,SECRET=load_config(report=True)
 def call(action,**kwargs):
  request=urllib.request.Request(GAS,data=json.dumps(dict(action=action,secret=SECRET,**kwargs)).encode(),headers={'Content-Type':'application/json'})
  with urllib.request.urlopen(request,timeout=60) as response:data=json.load(response)

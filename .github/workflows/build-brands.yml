@@ -20,6 +20,12 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - name: Verifier la configuration (sans afficher les secrets)
+        env:
+          GAS_URL: ${{ vars.GAS_URL }}
+          GAS_URL_SECRET_FALLBACK: ${{ secrets.GAS_URL }}
+          BRAND_CI_SECRET: ${{ secrets.BRAND_CI_SECRET }}
+        run: python3 tools/branding/brand_config.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -46,6 +52,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GAS_URL: ${{ vars.GAS_URL }}
+          GAS_URL_SECRET_FALLBACK: ${{ secrets.GAS_URL }}
           BRAND_CI_SECRET: ${{ secrets.BRAND_CI_SECRET }}
           BRAND_JOB_ID: ${{ inputs.job_id }}
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
