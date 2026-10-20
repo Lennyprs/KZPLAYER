@@ -247,6 +247,7 @@ object ApkUpdater {
 
     private fun launchInstaller(activity: Activity, apk: File) {
         try {
+            BrandIdentity.verify(activity, apk)
             val authority = activity.packageName + ".fileprovider"
             val uri: Uri = FileProvider.getUriForFile(activity, authority, apk)
             val intent = Intent(Intent.ACTION_VIEW).apply {

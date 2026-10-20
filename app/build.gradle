@@ -8,7 +8,8 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.kzplayer.app"
+        applicationId (System.getenv("BRAND_PACKAGE") ?: "com.kzplayer.app")
+        buildConfigField "String", "BRAND_ID", "\"${System.getenv('BRAND_ID') ?: ''}\""
         minSdk 21
         targetSdk 34
         // v392 : decalage +400 pour rester au-dessus des anciens builds Kozukaa
@@ -27,9 +28,10 @@ android {
             vcCode = runNum + 400
         }
         versionCode vcCode
-        versionName "3.4.0"
+        versionName "3.4.1"
     }
 
+    buildFeatures { buildConfig true }
     buildTypes {
         debug {
             minifyEnabled false

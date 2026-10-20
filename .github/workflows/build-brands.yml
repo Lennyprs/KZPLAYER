@@ -1,0 +1,63 @@
+name: Build branded KZ Player APKs
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Job du panel (vide = toutes les marques)
+        required: false
+        default: ''
+  push:
+    branches: [main]
+    paths: ['app/**', 'tools/branding/**', '.github/workflows/build-brands.yml']
+permissions:
+  contents: write
+concurrency:
+  group: kz-branded-builds
+  cancel-in-progress: false
+jobs:
+  branded:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Preparer Android 34
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - name: Preparer Gradle et Pillow
+        run: |
+          if [ ! -f ./gradlew ] || [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            WRAPGEN="$RUNNER_TEMP/wrapgen"
+            mkdir -p "$WRAPGEN"
+            echo 'rootProject.name = "wrapgen"' > "$WRAPGEN/settings.gradle"
+            ( cd "$WRAPGEN" && gradle wrapper --gradle-version 8.7 --distribution-type bin )
+            mkdir -p gradle/wrapper
+            cp "$WRAPGEN/gradlew" ./gradlew
+            cp "$WRAPGEN/gradle/wrapper/"* gradle/wrapper/
+          fi
+          chmod +x ./gradlew
+          python3 -m pip install 'Pillow>=11,<13'
+      - name: Compiler et publier les variantes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GAS_URL: ${{ vars.GAS_URL }}
+          BRAND_CI_SECRET: ${{ secrets.BRAND_CI_SECRET }}
+          BRAND_JOB_ID: ${{ inputs.job_id }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: python3 tools/branding/build_brands.py
+      - name: Conserver les mappings par marque
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brand-mappings-${{ github.run_number }}
+          path: brand-mappings/*.txt
+          if-no-files-found: ignore
+          retention-days: 30

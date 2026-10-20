@@ -454,6 +454,7 @@ object Api {
         "https://api.github.com/repos/Lennyprs/KZPLAYER/releases/latest"
 
     suspend fun checkForUpdate(license: String, currentVersion: String, currentVersionCode: Int = 0): UpdateInfo = withContext(Dispatchers.IO) {
+        if (BuildConfig.BRAND_ID.isNotBlank()) return@withContext BrandIdentity.check(currentVersion, currentVersionCode)
         // 1) Essaye GitHub Releases avec un timeout court : reponse rapide garantie.
         val gh = kotlinx.coroutines.withTimeoutOrNull(6000L) {
             try { queryGithubRelease(currentVersion, currentVersionCode) } catch (e: Exception) { null }
