@@ -1,0 +1,23 @@
+KZ PLAYER 3.4.5 — CORRECTIF COMPILATION V425
+
+Erreur corrigee : RemoteBrandTheme.kt:77:53 — Unsupported [literal prefixes and suffixes].
+Le mot-cle else etait colle a une chaine. La selection du prefixe PNG/JPEG a ete reecrite avec un bloc if/else explicite, sans changer son comportement.
+L'avertissement concernant libffmpegJNI.so n'est pas la cause de cet echec. Les bibliotheques et reglages de lecture ne sont pas modifies.
+
+Cette archive contient l'ensemble des sources V424 avec le correctif et versionName 3.4.5.
+Le calcul du versionCode reste celui du workflow existant, pour conserver les mises a jour.
+Active Code, habillage distant, interfaces, licences, playlists, lecteurs et signature : conserves.
+
+INSTALLATION
+1. Decompresse cette archive.
+2. Copie son CONTENU a la racine de ton dossier Git KZPLAYER en remplacant les fichiers existants. Ne copie pas seulement le fichier ZIP dans le depot.
+3. Depuis ce dossier Git, execute les trois commandes suivantes :
+
+git add app/build.gradle app/src/main/java/com/kzplayer/app/RemoteBrandTheme.kt A-LIRE-CORRECTIF-3.4.5.txt
+git commit -m "KZ Player 3.4.5 - correction compilation habillage"
+git push
+
+4. Verifie la nouvelle execution dans GitHub Actions.
+Ce correctif traite l'erreur Kotlin signalee. La compilation Android complete n'a pas ete executee dans cet environnement et reste a valider par GitHub Actions.
+
+Ne change pas les secrets de signature, la configuration Google ou les sites Cloudflare pour ce correctif Android. Si tu as installe le backend et le panel V96, conserve-les : les anciens guides presents dans cette archive de sources ne doivent pas te faire revenir a un backend anterieur.

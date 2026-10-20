@@ -74,7 +74,12 @@ object RemoteBrandTheme {
  }
  private fun image(data:String,limit:Int,background:Boolean):Bitmap?{
   if(data.isBlank())return null
-  val prefix=if(background)"data:image/jpeg;base64,"else"data:image/png;base64,";check(data.startsWith(prefix))
+  val prefix = if (background) {
+   "data:image/jpeg;base64,"
+  } else {
+   "data:image/png;base64,"
+  }
+  check(data.startsWith(prefix))
   val bytes=Base64.decode(data.substring(prefix.length),Base64.DEFAULT);check(bytes.size<=limit)
   val bounds=BitmapFactory.Options().apply{inJustDecodeBounds=true};BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
   check(bounds.outWidth>0&&bounds.outHeight>0&&bounds.outWidth<=2048&&bounds.outHeight<=2048&&bounds.outWidth.toLong()*bounds.outHeight<=2073600L)
