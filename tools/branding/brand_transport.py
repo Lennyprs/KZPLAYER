@@ -31,12 +31,12 @@ class BackendClient:
         return text.replace('\r', ' ').replace('\n', ' ')[:400]
 
     def call(self, action, **kwargs):
-        if action not in {'clientBackendVersion', 'brandCiQueueAll', 'brandCiFetch', 'brandCiComplete'}:
+        if action not in {'clientBackendVersion', 'brandCiQueueAll', 'brandCiFetch', 'brandCiComplete', 'brandCiJobStatus'}:
             raise BackendError('Action de compilation non prise en charge.')
-        read_only = action == 'clientBackendVersion'
-        timeout = READ_TIMEOUT if read_only else WRITE_TIMEOUT
+        read_only = action in {'clientBackendVersion', 'brandCiJobStatus'}
+        timeout = 20 if action == 'brandCiJobStatus' else READ_TIMEOUT if read_only else WRITE_TIMEOUT
         payload = dict(kwargs, action=action)
-        if not read_only:
+        if action != 'clientBackendVersion':
             payload['secret'] = self.secret
         request = urllib.request.Request(self.url, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
         def uncertain(message, retryable=False):
