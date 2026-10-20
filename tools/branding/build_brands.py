@@ -11,6 +11,26 @@ def call(action,**kwargs):
  return CLIENT.call(action,**kwargs)
 
 def cmd(args,**kwargs):return subprocess.run(args,check=True,**kwargs)
+EXPECTED_CERT_SHA256='E4288AF20EF2962943F4A7A0056CCB2661DE9D2838A311CDF4FA39BC6197BE6C'
+def verify_expected_signer(output):
+ # apksigner peut afficher « Signer #1 » ou « V3.0 Signer: ».
+ # Tous les certificats APK reconnus doivent correspondre au certificat epingle.
+ label=r'(?:Signer\s+#[1-9][0-9]*\s+|V[0-9]+(?:\.[0-9]+)?\s+Signer:\s*)'
+ prefix=re.compile(r'^\s*'+label+r'certificate\s+SHA-256\s+digest:',re.IGNORECASE)
+ full=re.compile(r'^\s*'+label+r'certificate\s+SHA-256\s+digest:\s*([a-fA-F0-9]{64})\s*$',re.IGNORECASE)
+ certificates=[]
+ for line in output.splitlines():
+  if prefix.match(line):
+   match=full.fullmatch(line)
+   if not match:raise RuntimeError('Signature non conforme : format de certificat SHA-256 invalide.')
+   certificates.append(match.group(1).upper())
+ if not certificates:raise RuntimeError('Signature non conforme : aucun certificat APK SHA-256 reconnu dans la sortie apksigner.')
+ detected=set(certificates)
+ if detected!={EXPECTED_CERT_SHA256}:
+  raise RuntimeError('Signature non conforme : attendu '+EXPECTED_CERT_SHA256+' ; detecte '+', '.join(sorted(detected))+'. Ne change pas les cles de signature au hasard.')
+ print('Signature APK : OK (certificat KZ Player attendu).')
+ return EXPECTED_CERT_SHA256
+
 def build(job):
  m=call('brandCiFetch',job_id=job);CLAIMED.add(job);brand=m['brand_id'];version=int(m['version_code']);env=os.environ.copy();env.update(apply(ROOT,m))
  bt=sorted((Path(env['ANDROID_SDK_ROOT'])/'build-tools').glob('*'),key=lambda p:[int(x) for x in p.name.split('.') if x.isdigit()])[-1]
@@ -21,8 +41,7 @@ def build(job):
   ks=Path(tmp)/'release.jks';ks.write_bytes(base64.b64decode(env['KEYSTORE_BASE64'],validate=True));ks.chmod(0o600)
   cmd([str(bt/'apksigner'),'sign','--ks',str(ks),'--ks-pass','env:KEYSTORE_PASSWORD','--ks-key-alias',env['KEY_ALIAS'],'--key-pass','env:KEY_PASSWORD','--out',str(apk),str(aligned)],env=env)
  verification=subprocess.check_output([str(bt/'apksigner'),'verify','--print-certs',str(apk)],text=True)
- cert=re.search(r'Signer #1 certificate SHA-256 digest:\s*([a-fA-F0-9]+)',verification)
- if not cert or cert.group(1).upper()!='E4288AF20EF2962943F4A7A0056CCB2661DE9D2838A311CDF4FA39BC6197BE6C':raise RuntimeError('Signature non conforme')
+ verify_expected_signer(verification)
  metadata=subprocess.check_output([str(bt/'aapt'),'dump','badging',str(apk)],text=True)
  if f"name='{m['package_id']}'" not in metadata or f"versionCode='{version}'" not in metadata:raise RuntimeError('Identité APK non conforme')
  tag='brand-'+brand

@@ -1,0 +1,38 @@
+KZ PLAYER — CORRECTIF LECTURE DE SIGNATURE — V98
+Application Android conservee en 3.4.5.
+
+CAUSE IDENTIFIEE
+Le journal fourni affiche :
+V3.0 Signer: certificate SHA-256 digest: e4288af20ef2962943f4a7a0056ccb2661de9d2838a311cdf4fa39bc6197be6c
+Cette empreinte correspond exactement au certificat KZ Player attendu.
+Le script de publication cherchait seulement le format « Signer #1 certificate SHA-256 digest: ... ». Il refusait donc une sortie V3.0 pourtant correcte.
+
+CORRECTION
+La lecture reconnait les formats Signer #1 et V2/V3.0/V3.1/V4 Signer.
+Le certificat attendu n'est PAS change. La verification cryptographique par apksigner, son code de retour, les controles du package et du numero de version sont conserves.
+Un mauvais certificat, un certificat absent ou malforme et des certificats APK contradictoires restent refuses avant la publication GitHub.
+Les avertissements META-INF du journal ne sont pas la cause de l'erreur de lecture corrigee ici. Aucune suppression aveugle de ressources n'est effectuee.
+
+INSTALLATION
+1. Decompresse cette archive COMPLETE.
+2. Copie son contenu dans ton dossier Git KZPLAYER en remplacant les fichiers existants, sans copier seulement le ZIP dans le depot.
+3. Depuis la racine de ce depot :
+
+git add tools/branding/build_brands.py A-LIRE-CORRECTIF-SIGNATURE-V98.txt
+git commit -m "Corrige la lecture de signature V3 des APK personnalisees"
+git push
+
+Le workflow des APK personnalisees est declenche par ce changement de script. Regarde la NOUVELLE execution.
+Le lot precedent a normalement ete marque en echec et n'est pas automatiquement remis en file par ce correctif. Si la nouvelle execution indique qu'il n'y a rien a compiler : panel revendeur > Mon APK personnalisee > Actualiser la compilation > Reprendre, puis suivre l'execution declenchee par le panel.
+Ne recrée pas la marque et ne change pas les images ou les cles pour corriger ce probleme de lecture.
+Un workflow vert sans lot ne signifie pas qu'une APK a ete produite : attendre le statut APK disponible dans le panel.
+
+CONSERVATION
+Tous les fichiers Android sont identiques a la 3.4.5 precedente. Aucun changement du lecteur, du systeme de licences, d'Active Code ou de l'habillage a distance.
+Les correctifs de delai Google V97 sont conserves, ainsi que le correctif Kotlin.
+Aucun changement de secret GitHub, de backend Google ou de site Cloudflare n'est requis pour installer cette correction CI.
+
+TESTS
+14 tests reussis : journal V3.0 fourni, format classique, multiples versions, refus d'un mauvais certificat, refus des empreintes malformees ou contradictoires.
+Une chaine de publication simulee confirme que le format fourni passe jusqu'a l'envoi d'APK et la confirmation, et qu'un mauvais certificat ou un echec cryptographique bloque toujours la publication.
+Les tests utilisent des commandes simulees : aucune nouvelle APK reelle n'a ete compilee ou publiee depuis cet environnement. La nouvelle execution GitHub reste a verifier.
