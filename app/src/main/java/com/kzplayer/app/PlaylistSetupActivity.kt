@@ -30,7 +30,7 @@ class PlaylistSetupActivity : BaseActivity() {
   findViewById<View>(R.id.backToChoices).setOnClickListener{showChoices()}
   input.setOnEditorActionListener{_,action,_->if(action==android.view.inputmethod.EditorInfo.IME_ACTION_DONE){redeem();true}else false}
   pending.getString("code",null)?.let{input.setText(it)}
-  FocusFx.apply(findViewById<View>(R.id.chooseActiveCode),findViewById<View>(R.id.chooseManual),findViewById<View>(R.id.submitActiveCode),findViewById<View>(R.id.refreshSetup),findViewById<View>(R.id.backToChoices))
+  FocusFx.applySubtle(findViewById<View>(R.id.chooseActiveCode),findViewById<View>(R.id.chooseManual),findViewById<View>(R.id.submitActiveCode),findViewById<View>(R.id.refreshSetup),findViewById<View>(R.id.backToChoices))
   findViewById<View>(R.id.chooseManual).requestFocus()
  }
  private fun showActiveCode(){if(busy)return;findViewById<View>(R.id.setupChooser).visibility=View.GONE;findViewById<View>(R.id.activeCodePanel).visibility=View.VISIBLE;status.text="";input.requestFocus()}

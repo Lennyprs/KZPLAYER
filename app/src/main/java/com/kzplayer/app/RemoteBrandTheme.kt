@@ -105,7 +105,7 @@ object RemoteBrandTheme {
    }
    if(tag=="brand:home-card"){
     if(!cardBackgrounds.containsKey(v))cardBackgrounds[v]=v.background
-    if(s?.enabled==true&&s.menuAccent){val dark=Color.rgb((Color.red(s.accent)*0.72f).toInt(),(Color.green(s.accent)*0.72f).toInt(),(Color.blue(s.accent)*0.72f).toInt());v.background=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(s.accent,dark,Color.rgb(14,14,18))).apply{cornerRadius=22f*a.resources.displayMetrics.density}}
+    if(s?.enabled==true&&s.menuAccent)v.background=officialHomeCard(s.accent,a.resources.displayMetrics.density)
     else v.background=cardBackgrounds[v]
    }
    if(tag?.startsWith("brand:setup-")==true){
@@ -130,6 +130,18 @@ object RemoteBrandTheme {
    if(v is ViewGroup)for(i in 0 until v.childCount)visit(v.getChildAt(i))
   }
   visit(root)
+ }
+ private fun officialHomeCard(accent:Int,density:Float):Drawable{
+  val dark=Color.rgb((Color.red(accent)*0.72f).toInt(),(Color.green(accent)*0.72f).toInt(),(Color.blue(accent)*0.72f).toInt())
+  fun card(stroke:Boolean)=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(accent,dark,Color.rgb(14,14,18))).apply{
+   cornerRadius=22f*density
+   if(stroke)setStroke((3*density).toInt().coerceAtLeast(1),Color.argb(153,255,255,255))
+  }
+  return StateListDrawable().apply{
+   addState(intArrayOf(android.R.attr.state_focused),card(true))
+   addState(intArrayOf(android.R.attr.state_pressed),card(true))
+   addState(intArrayOf(),card(false))
+  }
  }
  private fun setupBackground(tag:String,accent:Int,density:Float):Drawable{
   fun soft(alpha:Int)=Color.argb(alpha,Color.red(accent),Color.green(accent),Color.blue(accent))

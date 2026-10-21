@@ -41,13 +41,11 @@ def apply(root,m):
  palettes.write_text(text)
  # Version semantique partagee par le player officiel et toutes les APK de marque.
  gradle=root/'app/build.gradle'
- gradle.write_text(re.sub(r'versionName "[0-9]+\.[0-9]+\.[0-9]+"','versionName "3.4.11"',gradle.read_text()))
+ gradle.write_text(re.sub(r'versionName "[0-9]+\.[0-9]+\.[0-9]+"','versionName "3.5.0"',gradle.read_text()))
  raw=res/'raw';raw.mkdir(exist_ok=True)
  (raw/'brand_ui.json').write_text(json.dumps({'accent':accent,'focus':focus}))
- # Le nouveau gestionnaire applique le style sans remplacer les listeners de navigation.
- home=root/'app/src/main/java/com/kzplayer/app/HomeActivity.kt';h=home.read_text()
- h=h.replace('private fun addFocusBounce(v: View) {','private fun addFocusBounce(v: View) {\n        if (BuildConfig.BRAND_ID.isNotBlank()) return')
- home.write_text(h)
+ # Le focus reste strictement celui du player officiel : mêmes animations,
+ # mêmes élévations et mêmes contours ; seule la palette de marque change.
  # Les controles Android/Material herites doivent utiliser le meme accent.
  themes=res/'values/themes.xml';text=themes.read_text()
  controls={
