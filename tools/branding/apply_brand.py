@@ -10,14 +10,33 @@ def read_png(text):
  if len(raw)>130000:raise ValueError('Image trop volumineuse')
  im=Image.open(io.BytesIO(raw))
  if im.format!='PNG' or min(im.size)<32 or max(im.size)>2048 or im.width*im.height>1048576:raise ValueError('Image invalide')
- im.load();return im.convert('RGBA')
+ im.load();im=im.convert('RGBA')
+ bounds=im.getchannel('A').getbbox()
+ if bounds is None:raise ValueError('Logo entierement transparent')
+ return im.crop(bounds)
 
 def apply(root,m):
  brand=m['brand_id'];package=m['package_id'];name=m['config']['app_name']
  if not re.fullmatch('b[a-f0-9]{24}',brand) or package!='com.kzplayer.brand.'+brand:raise ValueError('Package invalide')
  if not 2<=len(name)<=40 or re.search(r'[\x00-\x1f<>]',name) or name[0] in '=+@-':raise ValueError('Nom invalide')
  if not 1000000<=int(m['version_code'])<=2000000000:raise ValueError('Version invalide')
+ accent=m['config'].get('accent_color','#e50914')
+ if not isinstance(accent,str) or not re.fullmatch(r'#[a-fA-F0-9]{6}',accent):raise ValueError('Couleur HEX invalide')
+ accent=accent.upper();dark='#'+''.join(f'{round(int(accent[i:i+2],16)*0.72):02X}' for i in (1,3,5))
  icon=read_png(m['config']['icon_png']);logo=read_png(m['config']['logo_png']);res=root/'app/src/main/res'
+ # Les ressources de la base principale ne sont jamais modifiees avant apply().
+ colors=res/'values/colors.xml';text=colors.read_text()
+ for key,value in {'accent':accent,'accent2':dark,'pink':accent,'gold':accent,'blue':accent,'teal':accent}.items():
+  text=re.sub(r'(<color name="'+key+r'">)[^<]+',lambda m:m[1]+value,text)
+ colors.write_text(text)
+ themes=res/'values/themes.xml';text=themes.read_text()
+ # Seulement les styles de base et de dialogue : les autres palettes restent disponibles.
+ base,sep,other=text.partition('<!-- ============ PALETTES PREDEFINIES ============ -->')
+ base=base.replace('#33E50914','#33'+accent[1:]);themes.write_text(base+sep+other)
+ palettes=root/'app/src/main/java/com/kzplayer/app/ColorThemePref.kt'
+ text=palettes.read_text().replace('Palette("red_black", "Rouge et Noir", R.style.Theme_KZ, 0xFFE50914.toInt()',
+  'Palette("red_black", "Couleur de la marque", R.style.Theme_KZ, 0xFF'+accent[1:]+'.toInt()')
+ palettes.write_text(text)
  for dpi,size in [('mdpi',48),('hdpi',72),('xhdpi',96),('xxhdpi',144),('xxxhdpi',192)]:
   folder=res/('mipmap-'+dpi);folder.mkdir(exist_ok=True);canvas=Image.new('RGBA',(size,size));im=ImageOps.contain(icon,(size,size));canvas.alpha_composite(im,((size-im.width)//2,(size-im.height)//2));canvas.save(folder/'ic_launcher.png')
  (res/'drawable/app_logo.xml').unlink(missing_ok=True);folder=res/'drawable-nodpi';folder.mkdir(exist_ok=True)
@@ -31,6 +50,13 @@ def apply(root,m):
  # Balises d'habillage distant : ressources de marque seulement.
  for layout in res.glob('layout*/*.xml'):
   text=layout.read_text()
+  # L'accueil classique utilise deux TextView, pas une ImageView. Les remplacer
+  # uniquement dans la copie de compilation de marque, sans toucher aux boutons.
+  title=r'<TextView\b(?=[^>]*android:text="KZ")[^>]*?/>\s*<TextView\b(?=[^>]*android:text="PLAYER")[^>]*?/>'
+  text=re.sub(title, '<ImageView android:layout_width="160dp" android:layout_height="48dp" '
+   'android:src="@drawable/kz_logo_wide" android:scaleType="fitCenter" '
+   'android:adjustViewBounds="true" android:contentDescription="@string/app_name" '
+   'android:tag="brand:wide" />',text,flags=re.S)
   def tag_view(match):
    block=match.group(0)
    if 'android:tag=' in block:return block

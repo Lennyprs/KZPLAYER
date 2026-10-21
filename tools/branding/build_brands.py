@@ -72,7 +72,7 @@ def build(job):
 
 def main():
  info=CLIENT.probe()
- if not isinstance(info,dict) or int(info.get('backendVersion',0))<100:raise BackendError('Deploie le backend V100 avant ce script : annulation non disponible sur l ancien backend.')
+ if not isinstance(info,dict) or int(info.get('backendVersion',0))<102:raise BackendError('Deploie le backend V102 avant ce script : couleur de compilation et annulation requises.')
  CLAIMED.clear()
  job=os.environ.get('BRAND_JOB_ID','').strip()
  if job and not re.fullmatch(r'job_[a-f0-9]{64}',job):raise BackendError('Job invalide')
