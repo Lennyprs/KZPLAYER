@@ -59,7 +59,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: python3 tools/branding/build_brands.py
+        run: python3 -u tools/branding/build_brands.py
       - name: Conserver les mappings par marque
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,4 +1,4 @@
-"""Transport Google borné. Aucune relance automatique d'une écriture CI."""
+"""Transport Google borne. Reprise limitee des seules lectures de statut."""
 import json
 import socket
 import ssl
@@ -24,17 +24,33 @@ class BackendClient:
         self.url, self.secret = url, secret
         self.opener = opener or urllib.request.urlopen
         self.sleep = sleep or time.sleep
-        self.report = report or print
+        self.report = report or (lambda message: print(message, flush=True))
 
     def safe(self, message):
         text = str(message).replace(self.secret, '[masque]') if self.secret else str(message)
         return text.replace('\r', ' ').replace('\n', ' ')[:400]
 
     def call(self, action, **kwargs):
+        # JobStatus ne modifie ni le job, ni les credits, ni la publication.
+        # Les ecritures CI restent strictement en envoi unique.
+        attempts = 2 if action == 'brandCiJobStatus' else 1
+        for attempt in range(attempts):
+            if action == 'brandCiJobStatus':
+                self.report('[CI] Lecture de l etat et de l annulation : essai %s/%s (delai %ss).' % (attempt + 1, attempts, READ_TIMEOUT))
+            try:
+                return self._call_once(action, **kwargs)
+            except BackendUncertain as error:
+                if attempt + 1 >= attempts or not error.retryable:
+                    raise
+                self.report('[CI] Lecture Google indisponible ; nouvel essai dans 3 secondes. Aucune ecriture ni publication pendant ce controle.')
+                self.sleep(3)
+        raise BackendError('Controle Google indisponible.')
+
+    def _call_once(self, action, **kwargs):
         if action not in {'clientBackendVersion', 'brandCiQueueAll', 'brandCiFetch', 'brandCiComplete', 'brandCiJobStatus'}:
             raise BackendError('Action de compilation non prise en charge.')
         read_only = action in {'clientBackendVersion', 'brandCiJobStatus'}
-        timeout = 20 if action == 'brandCiJobStatus' else READ_TIMEOUT if read_only else WRITE_TIMEOUT
+        timeout = READ_TIMEOUT if read_only else WRITE_TIMEOUT
         payload = dict(kwargs, action=action)
         if action != 'clientBackendVersion':
             payload['secret'] = self.secret
@@ -51,9 +67,9 @@ class BackendClient:
             message = 'Google a refuse ou interrompu la reponse (HTTP %s).' % code
             if code in {401, 403}:
                 message += ' Verifie le deploiement Web accessible a GitHub sans connexion Google.'
-            raise uncertain(message, retryable) from None
+            raise uncertain('[%s] %s' % (action, message), retryable) from None
         except (TimeoutError, socket.timeout):
-            raise uncertain('Google ne repond pas dans le delai de %s secondes.' % timeout, True) from None
+            raise uncertain('[%s] Google ne repond pas dans le delai de %s secondes.' % (action, timeout), True) from None
         except (urllib.error.URLError, OSError, HTTPException) as error:
             reason = getattr(error, 'reason', error)
             certificate = isinstance(reason, ssl.SSLCertVerificationError)

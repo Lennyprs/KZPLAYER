@@ -40,6 +40,7 @@ def build(job):
   CLAIMED.add(job);brand=m['brand_id'];version=int(m['version_code']);env=os.environ.copy();env.update(apply(ROOT,m))
   bt=sorted((Path(env['ANDROID_SDK_ROOT'])/'build-tools').glob('*'),key=lambda p:[int(x) for x in p.name.split('.') if x.isdigit()])[-1]
   run_gradle(['./gradlew','clean',':app:assembleRelease','--no-daemon','--stacktrace'],env,lambda:ensure_job(call,job))
+  print('[CI] Compilation Gradle terminee ; alignement et signature de l APK.',flush=True)
   apk=ROOT/f'app-{brand}-{version}.apk';aligned=ROOT/'brand-aligned.apk';unsigned=ROOT/'app/build/outputs/apk/release/app-release-unsigned.apk'
   cmd([str(bt/'zipalign'),'-p','-f','4',str(unsigned),str(aligned)])
   with tempfile.TemporaryDirectory() as tmp:
@@ -49,6 +50,7 @@ def build(job):
   verify_expected_signer(verification)
   metadata=subprocess.check_output([str(bt/'aapt'),'dump','badging',str(apk)],text=True)
   if f"name='{m['package_id']}'" not in metadata or f"versionCode='{version}'" not in metadata:raise RuntimeError('Identité APK non conforme')
+  print('[CI] Signature et identite APK verifiees ; controle Google avant publication.',flush=True)
   ensure_job(call,job)
   tag='brand-'+brand
   if subprocess.run(['gh','release','view',tag,'--repo',REPO],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:
@@ -58,6 +60,7 @@ def build(job):
   uploaded=True
   ensure_job(call,job)
   name=re.search(r'versionName "([0-9.]+)"',(ROOT/'app/build.gradle').read_text()).group(1)
+  print('[CI] APK envoyee a GitHub ; confirmation finale dans Google.',flush=True)
   result=call('brandCiComplete',job_id=job,success=True,version_name=name,sha256=hashlib.sha256(apk.read_bytes()).hexdigest())
   if result.get('cancelled'):raise BuildCancelled('Publication annulee avant validation serveur.')
   mapping=ROOT/'app/build/outputs/mapping/release/mapping.txt'
