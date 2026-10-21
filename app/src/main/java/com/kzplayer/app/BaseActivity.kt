@@ -11,11 +11,13 @@ open class BaseActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         RemoteBrandTheme.resume(this)
+        BrandMenuFocus.attach(this)
         // MainActivity peut changer d'ecran apres verification de licence : attendre
         // l'ecran suivant pour que le rapport ne disparaisse pas pendant cette navigation.
         if (this !is MainActivity) CrashDiagnostics.showPending(this)
     }
     override fun onPause() {
+        BrandMenuFocus.detach(this)
         RemoteBrandTheme.pause(this)
         super.onPause()
     }

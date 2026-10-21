@@ -3,6 +3,8 @@ package com.kzplayer.app
 import android.app.Activity
 import android.graphics.*
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
 import android.os.Handler
 import android.os.Looper
 import android.util.AtomicFile
@@ -27,13 +29,15 @@ import java.util.concurrent.TimeUnit
 
 /** Images et couleurs seulement. Aucune commande distante ni changement du lecteur. */
 object RemoteBrandTheme {
- private data class Skin(val revision:Long,val enabled:Boolean,val name:String,val color:Int,val accent:Int,val shade:Float,val logo:Bitmap?,val icon:Bitmap?,val background:Bitmap?)
+ private data class Skin(val revision:Long,val enabled:Boolean,val name:String,val color:Int,val accent:Int,val shade:Float,val logo:Bitmap?,val icon:Bitmap?,val background:Bitmap?,val menuAccent:Boolean=false)
  private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
  private val mutex=Mutex()
  private val handler=Handler(Looper.getMainLooper())
  private val client=OkHttpClient.Builder().connectTimeout(6,TimeUnit.SECONDS).readTimeout(15,TimeUnit.SECONDS).callTimeout(20,TimeUnit.SECONDS).build()
  private val backgrounds=WeakHashMap<View,Drawable?>()
  private val images=WeakHashMap<ImageView,Drawable?>()
+ private val cardBackgrounds=WeakHashMap<View,Drawable?>()
+ private val iconTints=WeakHashMap<ImageView,ColorStateList?>()
  private val texts=WeakHashMap<TextView,Pair<CharSequence,Int>>()
  @Volatile private var skin:Skin?=null
  private var loaded=false
@@ -70,7 +74,7 @@ object RemoteBrandTheme {
   val name=c.optString("display_name");check(name.length<=40)
   val shade=c.optDouble("shade",0.5).toFloat();check(shade.isFinite()&&shade in 0f..0.9f)
   val color=Color.parseColor(c.optString("background_color"));val accent=Color.parseColor(c.optString("accent"))
-  val enabled=c.optBoolean("enabled");return Skin(revision,enabled,name,color,accent,shade,if(enabled)image(c.optString("wide_logo"),130000,false)else null,if(enabled)image(c.optString("icon_logo"),130000,false)else null,if(enabled)image(c.optString("background"),300000,true)else null)
+  val enabled=c.optBoolean("enabled");return Skin(revision,enabled,name,color,accent,shade,if(enabled)image(c.optString("wide_logo"),130000,false)else null,if(enabled)image(c.optString("icon_logo"),130000,false)else null,if(enabled)image(c.optString("background"),300000,true)else null,c.optBoolean("menu_accent",false))
  }
  private fun image(data:String,limit:Int,background:Boolean):Bitmap?{
   if(data.isBlank())return null
@@ -94,6 +98,19 @@ object RemoteBrandTheme {
   if(s?.enabled==true){root.background=Wallpaper(s.background,s.color,s.shade)}else root.background=backgrounds[root]
   fun visit(v:View){
    val tag=v.tag as? String
+   if(tag=="brand:header"&&v is ViewGroup){
+    val named=s?.enabled==true&&s.name.isNotBlank()&&s.logo==null
+    for(i in 0 until v.childCount){val child=v.getChildAt(i);if(child.tag=="brand:wide")child.visibility=if(named)View.GONE else View.VISIBLE;if(child.tag=="brand:name")child.visibility=if(named)View.VISIBLE else View.GONE}
+   }
+   if(tag=="brand:home-card"){
+    if(!cardBackgrounds.containsKey(v))cardBackgrounds[v]=v.background
+    if(s?.enabled==true&&s.menuAccent){val dark=Color.rgb((Color.red(s.accent)*0.72f).toInt(),(Color.green(s.accent)*0.72f).toInt(),(Color.blue(s.accent)*0.72f).toInt());v.background=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(s.accent,dark,Color.rgb(14,14,18))).apply{cornerRadius=22f*a.resources.displayMetrics.density}}
+    else v.background=cardBackgrounds[v]
+   }
+   if(v is ImageView&&tag=="brand:accent-icon"){
+    if(!iconTints.containsKey(v))iconTints[v]=v.imageTintList
+    v.imageTintList=if(s?.enabled==true&&s.menuAccent)ColorStateList.valueOf(s.accent)else iconTints[v]
+   }
    if(v is ImageView&&(tag=="brand:wide"||tag=="brand:icon")){
     if(!images.containsKey(v))images[v]=v.drawable
     val bitmap=if(tag=="brand:wide")s?.logo else s?.icon
