@@ -505,6 +505,7 @@ object Api {
         val body = quick.newCall(req).execute().use { it.body?.string() ?: "" }
         val obj = try { JSONObject(body) } catch (e: Exception) { return emptyUpdate(currentVersion) }
         val tag = obj.optString("tag_name").ifBlank { obj.optString("name") } // ex "v135"
+        val releaseName = obj.optString("name")
         val notes = obj.optString("body")
         val htmlUrl = obj.optString("html_url")
         // Trouve l'asset APK (fichier .apk).
@@ -530,7 +531,7 @@ object Api {
         return UpdateInfo(
             ok = true,
             hasUpdate = has,
-            latestVersion = tag,
+            latestVersion = Regex("[0-9]+\\.[0-9]+\\.[0-9]+").find(releaseName)?.value ?: tag,
             currentVersion = currentVersion,
             downloadUrl = if (apkUrl.isNotBlank()) apkUrl else htmlUrl,
             notes = notes,

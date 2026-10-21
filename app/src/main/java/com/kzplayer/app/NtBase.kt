@@ -18,7 +18,7 @@ abstract class NtBase : BaseActivity() {
                 val res = Api.checkLicense(
                     DeviceIdentity.stableId(this@NtBase),
                     DeviceIdentity.licenseCode(this@NtBase),
-                    Build.MODEL ?: "Android TV", "1.0"
+                    Build.MODEL ?: "Android TV", BuildConfig.VERSION_NAME
                 )
                 if (res.ok && res.active) {
                     LicenseGuard.rememberOk(this@NtBase, res.expiration)

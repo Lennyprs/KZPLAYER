@@ -39,9 +39,9 @@ def apply(root,m):
  text=palettes.read_text().replace('Palette("red_black", "Rouge et Noir", R.style.Theme_KZ, 0xFFE50914.toInt()',
   'Palette("red_black", "Couleur de la marque", R.style.Theme_KZ, 0xFF'+accent[1:]+'.toInt()')
  palettes.write_text(text)
- # Version de marque seulement : la version de l APK principale reste inchangee.
+ # Version semantique partagee par le player officiel et toutes les APK de marque.
  gradle=root/'app/build.gradle'
- gradle.write_text(re.sub(r'versionName "[0-9]+\.[0-9]+\.[0-9]+"','versionName "3.4.10"',gradle.read_text()))
+ gradle.write_text(re.sub(r'versionName "[0-9]+\.[0-9]+\.[0-9]+"','versionName "3.4.11"',gradle.read_text()))
  raw=res/'raw';raw.mkdir(exist_ok=True)
  (raw/'brand_ui.json').write_text(json.dumps({'accent':accent,'focus':focus}))
  # Le nouveau gestionnaire applique le style sans remplacer les listeners de navigation.

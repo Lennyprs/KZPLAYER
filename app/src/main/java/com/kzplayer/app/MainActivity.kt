@@ -45,7 +45,7 @@ class MainActivity : BaseActivity() {
                     deviceId = deviceId(),
                     deviceCode = deviceCode(),
                     deviceName = Build.MODEL ?: "Android TV",
-                    appVersion = "1.0"
+                    appVersion = BuildConfig.VERSION_NAME
                 )
                 if (res.ok && res.active) {
                     LicenseGuard.rememberOk(this@MainActivity, res.expiration)
@@ -56,15 +56,17 @@ class MainActivity : BaseActivity() {
                         ?: Session.playlists.firstOrNull()
                     SessionCache.save(this@MainActivity) // v375 : cache local des serveurs
                     startActivity(Intent(this@MainActivity, if (Session.playlists.isEmpty()) PlaylistSetupActivity::class.java else ThemePref.homeClass(this@MainActivity)))
-                } else if (LicenseGuard.wasRecentlyActive(this@MainActivity)) {
-                    // Fenetre de grace : licence vue active il y a moins de 24h.
-                    // On ne bloque pas l'utilisateur sur un hoquet backend / cold start.
+                } else if (!res.ok && LicenseGuard.wasRecentlyActive(this@MainActivity)) {
+                    // Tolérance uniquement si le serveur est réellement indisponible.
                     Session.expiration = LicenseGuard.lastExpiration(this@MainActivity) ?: res.expiration
                     startActivity(Intent(this@MainActivity, if (Session.playlists.isEmpty()) PlaylistSetupActivity::class.java else ThemePref.homeClass(this@MainActivity)))
                 } else {
+                    // Une réponse serveur explicite inactive/bloquée/supprimée est définitive.
+                    if (res.ok) LicenseGuard.revoke(this@MainActivity)
                     codeTv.text = res.deviceCode.ifBlank { deviceCode() }
                     statusTv.text = res.message.ifBlank {
-                        "Licence en attente d\u2019activation. Ouvre le panel admin pour activer cet appareil."
+                        if (res.ok) "Licence inactive, bloquée ou supprimée."
+                        else "Serveur de licence indisponible. Vérifie la connexion puis réessaie."
                     }
                 }
             } catch (e: Exception) {

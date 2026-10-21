@@ -213,7 +213,7 @@ class VoiceActivity : Activity() {
                 Api.checkLicense(
                     DeviceIdentity.stableId(appCtx),
                     DeviceIdentity.licenseCode(appCtx),
-                    android.os.Build.MODEL ?: "Android TV", "1.0"
+                    android.os.Build.MODEL ?: "Android TV", BuildConfig.VERSION_NAME
                 )
             } catch (e: Exception) { null }
             if (res != null && res.ok && res.active) {

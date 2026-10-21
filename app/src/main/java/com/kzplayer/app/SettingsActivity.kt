@@ -167,7 +167,7 @@ class SettingsActivity : BaseActivity() {
                 val res = Api.checkLicense(
                     DeviceIdentity.stableId(this@SettingsActivity),
                     DeviceIdentity.licenseCode(this@SettingsActivity),
-                    Build.MODEL ?: "Android TV", "1.0"
+                    Build.MODEL ?: "Android TV", BuildConfig.VERSION_NAME
                 )
                 if (res.ok && res.active) {
                     LicenseGuard.rememberOk(this@SettingsActivity, res.expiration)
@@ -182,11 +182,12 @@ class SettingsActivity : BaseActivity() {
                     val plName = Session.current?.nom
                     findViewById<TextView>(R.id.playlistStateTv).text =
                         if (!plName.isNullOrBlank()) "Active : $plName" else "Choisir le serveur / la liste active"
-                } else if (LicenseGuard.wasRecentlyActive(this@SettingsActivity)) {
-                    // Fenetre de grace : hoquet backend, on ne dit pas "inactive" a tort.
+                } else if (!res.ok && LicenseGuard.wasRecentlyActive(this@SettingsActivity)) {
                     stateTv.text = "Backend indisponible, licence conserv\u00e9e"
+                } else if (res.ok) {
+                    LicenseEnforcer.block(this@SettingsActivity, res.message)
                 } else {
-                    stateTv.text = res.message.ifBlank { "Licence inactive" }
+                    stateTv.text = "Serveur de licence indisponible"
                 }
             } catch (e: Exception) {
                 stateTv.text = "Erreur de rechargement"

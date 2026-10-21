@@ -19,7 +19,7 @@ object AutoReloader {
         CoroutineScope(Dispatchers.IO).launch {
             var ok = false
             try {
-                val res = Api.checkLicense(DeviceIdentity.stableId(app), DeviceIdentity.licenseCode(app), android.os.Build.MODEL ?: "Android TV", "3.2.0")
+                val res = Api.checkLicense(DeviceIdentity.stableId(app), DeviceIdentity.licenseCode(app), android.os.Build.MODEL ?: "Android TV", BuildConfig.VERSION_NAME)
                 if (res.ok && res.active) {
                     LicenseGuard.rememberOk(app, res.expiration)
                     Session.playlists = LocalPlaylists.merge(res.playlists)
@@ -30,6 +30,8 @@ object AutoReloader {
                     SessionCache.save(app)
                     prefs.edit().putLong(KEY_LAST, System.currentTimeMillis()).apply()
                     ok = true
+                } else if (res.ok) {
+                    LicenseGuard.revoke(app)
                 }
             } catch (_: Exception) {}
             onDone?.invoke(ok)

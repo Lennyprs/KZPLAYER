@@ -172,7 +172,7 @@ class BrowseActivity : BaseActivity() {
                     val res = Api.checkLicense(
                         DeviceIdentity.stableId(this@BrowseActivity),
                         DeviceIdentity.licenseCode(this@BrowseActivity),
-                        android.os.Build.MODEL ?: "Android TV", "1.0"
+                        android.os.Build.MODEL ?: "Android TV", BuildConfig.VERSION_NAME
                     )
                     if (res.ok && res.active) {
                         Session.playlists = LocalPlaylists.merge(res.playlists)
@@ -341,7 +341,7 @@ class BrowseActivity : BaseActivity() {
                 Api.checkLicense(
                     DeviceIdentity.stableId(this@BrowseActivity),
                     DeviceIdentity.licenseCode(this@BrowseActivity),
-                    android.os.Build.MODEL ?: "Android TV", "1.0"
+                    android.os.Build.MODEL ?: "Android TV", BuildConfig.VERSION_NAME
                 )
             } catch (e: Exception) { null }
             if (res != null && res.ok && res.active && res.playlists.isNotEmpty()) {

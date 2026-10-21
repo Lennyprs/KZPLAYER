@@ -25,7 +25,7 @@ class HomeActivity : BaseActivity() {
         expTv.text = "Rechargement..."
         lifecycleScope.launch {
             try {
-                val res = Api.checkLicense(deviceId(), deviceCode(), android.os.Build.MODEL ?: "Android TV", "1.0")
+                val res = Api.checkLicense(deviceId(), deviceCode(), android.os.Build.MODEL ?: "Android TV", BuildConfig.VERSION_NAME)
                 if (res.ok && res.active) {
                     LicenseGuard.rememberOk(this@HomeActivity, res.expiration)
                     Session.playlists = LocalPlaylists.merge(res.playlists)
@@ -35,13 +35,13 @@ class HomeActivity : BaseActivity() {
                         ?: Session.playlists.firstOrNull()
                     SessionCache.save(this@HomeActivity)
                     expTv.text = Session.expiration?.let { "Expiration : $it" } ?: "Licence illimit\u00e9e"
-                } else if (LicenseGuard.wasRecentlyActive(this@HomeActivity)) {
-                    // Fenetre de grace : on ne montre pas "Licence inactive" a tort quand le
-                    // backend a juste hoquete. La derniere expiration connue reste affichee.
+                } else if (!res.ok && LicenseGuard.wasRecentlyActive(this@HomeActivity)) {
                     val exp = LicenseGuard.lastExpiration(this@HomeActivity) ?: Session.expiration
-                    expTv.text = exp?.let { "Expiration : $it" } ?: "Licence active"
+                    expTv.text = exp?.let { "Expiration : $it" } ?: "Licence conservée hors ligne"
+                } else if (res.ok) {
+                    LicenseEnforcer.block(this@HomeActivity, res.message)
                 } else {
-                    expTv.text = res.message.ifBlank { "Licence inactive" }
+                    expTv.text = "Serveur de licence indisponible"
                 }
             } catch (e: Exception) {
                 expTv.text = "Erreur rechargement"

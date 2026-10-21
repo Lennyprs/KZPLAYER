@@ -1040,6 +1040,16 @@ class PlayerActivity : AppCompatActivity() {
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 
+    override fun onResume() {
+        super.onResume()
+        LicenseEnforcer.resume(this)
+    }
+
+    override fun onPause() {
+        LicenseEnforcer.pause(this)
+        super.onPause()
+    }
+
     override fun onStop() {
         saveWatchProgress()
         super.onStop()

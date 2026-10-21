@@ -70,6 +70,11 @@ object SessionCache {
     fun has(ctx: Context): Boolean =
         Session.playlists.isNotEmpty() || prefs(ctx).getString(KEY_PL, "").orEmpty().isNotBlank()
 
+    fun clear(ctx: Context) {
+        try { prefs(ctx).edit().clear().commit() } catch (_: Throwable) {}
+        Session.clear()
+    }
+
     private fun toJson(p: Playlist): JSONObject {
         val o = JSONObject()
         o.put("id", p.id)

@@ -40,6 +40,13 @@ object LicenseGuard {
 
     fun clear(ctx: Context) {
         ctx.applicationContext
-            .getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+    }
+
+    // Une réponse serveur explicite inactive/bloquée/expirée n'est jamais une panne réseau.
+    // Elle révoque immédiatement la session locale et son cache.
+    fun revoke(ctx: Context) {
+        clear(ctx)
+        SessionCache.clear(ctx)
     }
 }

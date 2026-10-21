@@ -33,7 +33,7 @@ class PlaylistSettingsActivity : BaseActivity() {
                     val res = Api.checkLicense(
                         DeviceIdentity.stableId(this@PlaylistSettingsActivity),
                         DeviceIdentity.licenseCode(this@PlaylistSettingsActivity),
-                        Build.MODEL ?: "Android TV", "1.0"
+                        Build.MODEL ?: "Android TV", BuildConfig.VERSION_NAME
                     )
                     if (res.ok && res.active) {
                         Session.playlists = LocalPlaylists.merge(res.playlists)

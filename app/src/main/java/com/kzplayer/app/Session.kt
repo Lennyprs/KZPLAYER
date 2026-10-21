@@ -16,4 +16,18 @@ object Session {
     // File d'attente des episodes pour la lecture a la suite (fonctionne sur les 2 themes).
     var episodeQueue: List<Item> = emptyList()
     var episodeIndex: Int = -1
+    fun clear() {
+        playlists = emptyList()
+        current = null
+        expiration = null
+        browseTitle = ""
+        detailItem = null
+        seriesItem = null
+        liveChannels = emptyList()
+        zapChannels = emptyList()
+        zapIndex = -1
+        episodeQueue = emptyList()
+        episodeIndex = -1
+    }
 }
+
