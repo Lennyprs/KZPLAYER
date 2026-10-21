@@ -1,0 +1,66 @@
+KZ PLAYER — LOGOS ET COULEUR DES APK PERSONNALISEES
+=================================================
+Versions de cette livraison : Android 3.4.6 ; backend partagé V102 ; panel revendeur V102.
+Sources : Android 3.4.5 ANNULATION V100, backend V100, panel revendeur V101.
+Les panels client V92 et administrateur V94 restent inchangés. Ne pas réinstaller leurs anciens backends.
+
+CE QUI CHANGE
+- APK de marque : le logo intérieur remplace les deux textes KZ/PLAYER à l'accueil Classique. Zone fixe 160 x 48 dp, image ajustée sans étirement. Aucune modification de ce titre dans l'APK principale.
+- Le logo carré Android est aussi intégré à kz_logo_icon, utilisé dans les paramètres et la barre NewTivi. Les logos horizontaux utilisés dans les autres écrans restent remplacés.
+- Les marges entièrement transparentes des logos sont retirées lors de la compilation, puis les images sont centrées dans leurs canevas sans déformation. Une image entièrement transparente est refusée. Pas de suppression automatique d'un fond opaque.
+- Un sélecteur de couleur et une saisie #RRGGBB sont ajoutés au formulaire de compilation. Le sélecteur dépend du navigateur/système ; la saisie HEX est toujours disponible.
+- La couleur traverse le panel, le Worker Cloudflare, la configuration Google Drive et le script de compilation.
+- La palette par défaut d'une APK personnalisée devient « Couleur de la marque ». Boutons, tuiles, focus, surbrillances et accents de cette palette utilisent la couleur intégrée et sa variante sombre.
+- Les autres palettes de l'application restent disponibles : si l'utilisateur en a déjà choisi une, ce choix est conservé ; il peut sélectionner « Couleur de la marque » dans Paramètres > Couleurs.
+- Les couleurs de danger/erreur sont conservées. Choisir une couleur contrastée avec le fond sombre ; une couleur très sombre peut rendre le focus peu visible.
+- L'habillage distant reste distinct : son accent concerne les textes déjà pris en charge, pas les boutons. Les logos distants déjà publiés peuvent remplacer les logos intégrés. Retirer ces images distantes ou désactiver cet habillage pour vérifier les images de l'APK.
+- L'icône du lanceur Android ne change qu'avec une nouvelle APK.
+
+ORDRE DE DEPLOIEMENT
+1. Google Apps Script : sauvegarder le code actuel. Remplacer le fichier backend complet par code-license-cloudflare-v102.gs dans le MEME projet. Conserver tout autre fichier du projet, les propriétés, le tableur et ses données. Aucune nouvelle propriété n'est nécessaire.
+   Enregistrer, puis Déployer > Gérer les déploiements > modifier le déploiement existant > nouvelle version. Conserver son URL /exec. La simple sauvegarde du fichier ne met pas le déploiement à jour.
+2. Dépôt Android : extraire KZ-Player-3.4.6-LOGOS-COULEUR-V102.zip à la racine de la copie locale du dépôt main (app/, tools/, .github/ au bon niveau), puis exécuter les TROIS commandes ci-dessous depuis cette racine.
+   Le push déclenche les workflows existants. Vérifier leur résultat dans GitHub Actions. Les clés, signatures, packages et canaux de marque restent ceux du projet existant. Ne pas remplacer une APK de marque par l'APK principale.
+3. Cloudflare Pages REVENDEUR uniquement : déployer kzplayer-cloudflare-revendeur-v102.zip. Le ZIP contient index.html, _worker.js, _headers, _routes.json, app-v102.js et style-v102.css directement à la racine. Conserver la variable GAS_URL existante et les autres réglages du projet.
+4. Ouvrir le panel revendeur, préparer une NOUVELLE compilation avec nom, icône, logo et couleur. Une demande déjà en attente doit être résolue/reprise/annulée avant de changer ses paramètres. Ne jamais changer son request_id pour contourner une réponse incertaine.
+5. Installer l'APK signée du canal de LA marque sur l'appareil test, puis effectuer la recette ci-dessous.
+
+COMMANDES GIT — EXACTEMENT TROIS LIGNES
+Depuis la racine du dépôt, après copie des sources :
+git add app/build.gradle tools/branding/apply_brand.py tools/branding/build_brands.py
+git commit -m "Fix branded logos and configurable accent color (3.4.6)"
+git push origin main
+
+COMPATIBILITE / REPRISE
+Le backend complet conserve les fonctions de V100, l'idempotence et les annulations persistantes.
+Une ancienne requête sans accent_color garde le même objet de configuration et donc le même hash. Sa reprise ne lui ajoute pas de couleur.
+Une nouvelle requête inclut accent_color dans le hash : on ne peut pas changer sa couleur avec la même référence.
+Une ancienne configuration Drive sans couleur compile avec le rouge historique.
+Le script de compilation exige backendVersion >= 102. Le nouveau formulaire refuse une nouvelle compilation couleur si le backend chargé est trop ancien, mais conserve les possibilités de reprise des demandes existantes.
+Aucun crédit licence consommé par la compilation. Pas de nouvelle colonne Sheet, pas de migration de données.
+
+TESTS LOCAUX ET LIMITES
+Tests automatisés fournis dans Guide-et-tests-KZ-V102.zip :
+- Validation syntaxique JS, Worker et backend ; compilation syntaxique Python.
+- Génération de ressources sur copies avec couleur turquoise, noire, blanche et ancienne configuration sans couleur ; XML tous analysés ; logos, dimensions, tags et couleurs contrôlés ; couleur invalide rejetée.
+- Empreintes identiques de PlayerActivity, LivePreviewActivity, TrailerActivity, Config et RemoteBrandTheme après génération.
+- Tests isolés du backend : hash V100 conservé, reprise ancienne/nouvelle demande, refus du changement de couleur pour une même référence, annulation conservée, toutes les fonctions V100 toujours présentes.
+- Worker testé sans appel externe : transmission/validation de la couleur et compatibilité ancien panel.
+- Test du formulaire dans Chromium local : synchronisation sélecteur/HEX, validation, images, envoi de la couleur, remise à zéro du formulaire et absence d’erreur JavaScript.
+Ces tests utilisent des données fictives. Ils ne sont pas des tests d'intégration avec Google, Cloudflare ou GitHub réels.
+Pas de compilation Gradle/APK complète dans cet environnement (pas de chaîne Java/SDK Android configurée). Pas d'APK installée ni de test sur télévision. Aucun déploiement effectué.
+
+RECETTE REELLE A EFFECTUER
+- Attendre les builds GitHub verts ; vérifier package, version 3.4.6, signature et canal de marque.
+- Accueil Classique : logo au lieu du texte KZPLAYER, sans dépasser la barre ni gêner les boutons à droite ; tester une image large et une image presque carrée.
+- Paramètres : icône de marque, et non celle de KZ Player ; tester aussi NewTivi et Netflix.
+- Palette « Couleur de la marque » : comparer tuiles, boutons et bordures de focus à la couleur demandée. Tester navigation à la télécommande et écrans petits/grands.
+- Tester un habillage distant activé puis désactivé, avec et sans images distantes.
+- Vérifier que l'APK principale garde sa marque et sa palette d'origine.
+- Vérifier lecture TV/VOD/replay, listes, activation, mise à jour et annulation de compilation avec vos comptes de test autorisés, sans journaliser d'identifiants IPTV.
+
+RETOUR ARRIERE
+Sauvegarder vos fichiers et déploiements AVANT installation. En cas de problème de panel, revenir au déploiement panel précédent sans rétrograder le backend partagé. En cas de compilation, conserver les sources et journaux de la demande avant toute reprise. Les anciennes APK ne reçoivent pas ces corrections Android sans mise à jour.
+
+CONFIDENTIALITE
+Les sources livrées peuvent contenir la configuration héritée du projet. Ne pas publier le backend, les archives de panels ou les réglages sensibles sur un dépôt public. Les commandes Git ci-dessus ne concernent que les trois fichiers Android explicitement listés.

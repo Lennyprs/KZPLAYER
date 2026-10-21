@@ -4,6 +4,7 @@ import android.app.Activity
 import android.graphics.*
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.content.res.ColorStateList
 import android.os.Handler
 import android.os.Looper
@@ -53,11 +54,11 @@ object RemoteBrandTheme {
   
   scope.launch{
    mutex.withLock{
-    if(!loaded){loaded=true;try{val text=cache(a).openRead().bufferedReader().use{it.readText()};if(text.length<=900000)skin=parse(JSONObject(text))}catch(_:Exception){}catch(_:OutOfMemoryError){};notifyUi()}
+    if(!loaded){loaded=true;try{val text=cache(a).openRead().bufferedReader().use{it.readText()};if(text.length<=3200000)skin=parse(JSONObject(text))}catch(_:Exception){}catch(_:OutOfMemoryError){};notifyUi()}
     val now=android.os.SystemClock.elapsedRealtime();if(now-lastCheck<120000)return@withLock;lastCheck=now
     try{
      val form=FormBody.Builder().add("action","brandThemeGet").add("brand_id",BuildConfig.BRAND_ID).add("revision",(skin?.revision?:-1L).toString()).build()
-     val text=client.newCall(Request.Builder().url(Config.LOGIN_URL).post(form).build()).execute().use{response->check(response.isSuccessful);val body=response.body?:error("Empty theme response");check(body.contentLength()<=900000);val bytes=body.byteStream().use{input->val out=ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=input.read(buffer);if(n<0)break;check(out.size()+n<=900000);out.write(buffer,0,n)};out.toByteArray()};String(bytes,Charsets.UTF_8)}
+     val text=client.newCall(Request.Builder().url(Config.LOGIN_URL).post(form).build()).execute().use{response->check(response.isSuccessful);val body=response.body?:error("Empty theme response");check(body.contentLength()<=3200000);val bytes=body.byteStream().use{input->val out=ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=input.read(buffer);if(n<0)break;check(out.size()+n<=3200000);out.write(buffer,0,n)};out.toByteArray()};String(bytes,Charsets.UTF_8)}
      val json=JSONObject(text);check(json.optBoolean("ok")&&json.optString("brand_id")==BuildConfig.BRAND_ID)
      if(!json.optBoolean("unchanged")){
       val next=parse(json);check(next.revision>=(skin?.revision?:0L));val atomic=cache(a);val output=atomic.startWrite();try{output.write(text.toByteArray(Charsets.UTF_8));atomic.finishWrite(output)}catch(e:Exception){atomic.failWrite(output);throw e};skin=next;notifyUi()
@@ -74,7 +75,7 @@ object RemoteBrandTheme {
   val name=c.optString("display_name");check(name.length<=40)
   val shade=c.optDouble("shade",0.5).toFloat();check(shade.isFinite()&&shade in 0f..0.9f)
   val color=Color.parseColor(c.optString("background_color"));val accent=Color.parseColor(c.optString("accent"))
-  val enabled=c.optBoolean("enabled");return Skin(revision,enabled,name,color,accent,shade,if(enabled)image(c.optString("wide_logo"),130000,false)else null,if(enabled)image(c.optString("icon_logo"),130000,false)else null,if(enabled)image(c.optString("background"),300000,true)else null,c.optBoolean("menu_accent",false))
+  val enabled=c.optBoolean("enabled");return Skin(revision,enabled,name,color,accent,shade,if(enabled)image(c.optString("wide_logo"),900000,false)else null,if(enabled)image(c.optString("icon_logo"),900000,false)else null,if(enabled)image(c.optString("background"),300000,true)else null,c.optBoolean("menu_accent",false))
  }
  private fun image(data:String,limit:Int,background:Boolean):Bitmap?{
   if(data.isBlank())return null
@@ -107,6 +108,10 @@ object RemoteBrandTheme {
     if(s?.enabled==true&&s.menuAccent){val dark=Color.rgb((Color.red(s.accent)*0.72f).toInt(),(Color.green(s.accent)*0.72f).toInt(),(Color.blue(s.accent)*0.72f).toInt());v.background=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(s.accent,dark,Color.rgb(14,14,18))).apply{cornerRadius=22f*a.resources.displayMetrics.density}}
     else v.background=cardBackgrounds[v]
    }
+   if(tag?.startsWith("brand:setup-")==true){
+    if(!cardBackgrounds.containsKey(v))cardBackgrounds[v]=v.background
+    v.background=if(s?.enabled==true)setupBackground(tag,s.accent,a.resources.displayMetrics.density) else cardBackgrounds[v]
+   }
    if(v is ImageView&&tag=="brand:accent-icon"){
     if(!iconTints.containsKey(v))iconTints[v]=v.imageTintList
     v.imageTintList=if(s?.enabled==true&&s.menuAccent)ColorStateList.valueOf(s.accent)else iconTints[v]
@@ -125,6 +130,25 @@ object RemoteBrandTheme {
    if(v is ViewGroup)for(i in 0 until v.childCount)visit(v.getChildAt(i))
   }
   visit(root)
+ }
+ private fun setupBackground(tag:String,accent:Int,density:Float):Drawable{
+  fun soft(alpha:Int)=Color.argb(alpha,Color.red(accent),Color.green(accent),Color.blue(accent))
+  fun shape(color:Int,radius:Float,stroke:Int=0,strokeColor:Int=Color.TRANSPARENT)=GradientDrawable().apply{
+   setColor(color);cornerRadius=radius*density
+   if(stroke>0)setStroke((stroke*density).toInt().coerceAtLeast(1),strokeColor)
+  }
+  fun selector(normal:Drawable,focused:Drawable,pressed:Drawable=focused)=StateListDrawable().apply{
+   addState(intArrayOf(android.R.attr.state_focused),focused)
+   addState(intArrayOf(android.R.attr.state_pressed),pressed)
+   addState(intArrayOf(),normal)
+  }
+  return when(tag){
+   "brand:setup-panel"->GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(Color.rgb(22,27,33),Color.rgb(8,13,18))).apply{cornerRadius=24f*density;setStroke((2*density).toInt().coerceAtLeast(1),accent)}
+   "brand:setup-input"->selector(shape(Color.rgb(7,13,18),12f,1,Color.rgb(75,82,92)),shape(Color.rgb(7,13,18),12f,3,accent))
+   "brand:setup-primary"->selector(shape(accent,12f),shape(accent,12f,3,Color.WHITE),shape(soft(220),12f))
+   "brand:setup-secondary"->selector(shape(Color.TRANSPARENT,10f),shape(soft(45),10f,2,accent))
+   else->selector(shape(Color.rgb(20,25,31),20f,1,Color.rgb(55,64,76)),shape(soft(45),20f,3,accent),shape(soft(65),20f,2,accent))
+  }
  }
  private class Wallpaper(private val bitmap:Bitmap?,private val color:Int,private val shade:Float):Drawable(){
   private val paint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)

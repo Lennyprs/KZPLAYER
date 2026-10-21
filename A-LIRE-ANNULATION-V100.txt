@@ -1,0 +1,58 @@
+KZ PLAYER — ANNULATION DE COMPILATION — V100
+Application Android conservee en 3.4.5.
+
+NOUVEAU BOUTON
+Dans Mon APK personnalisee > Ma compilation : Annuler la compilation.
+Apres confirmation, la demande est annulee cote Google. L'APK deja publiee, son lien, le package de marque et les licences restent conserves. Aucun credit licence n'est consomme.
+Clique ensuite Recommencer une compilation pour preparer le nouveau nom et les deux images.
+Les demandes annulees ne maintiennent plus le blocage de compilation ni leur propre delai de cinq minutes. Les autres demandes recentes non annulees restent soumises au delai anti-abus existant.
+Une APK deja publiee ne peut pas etre retiree par ce bouton : le panel indique alors qu'elle etait deja publiee et la conserve.
+
+INSTALLATION DANS CET ORDRE
+1. GOOGLE APPS SCRIPT
+Ouvre le projet actuel. Remplace tout le backend par code-license-cloudflare-v100.gs, puis enregistre.
+Deployer > Gerer les deploiements > crayon du deploiement /exec actuel > Version : Nouvelle version > Deployer.
+Conserve la meme adresse, le meme tableur et les proprietes/secrets existants. Aucun nouveau secret a creer.
+L'onglet technique apk_build_cancellations se cree automatiquement. Ne pas l'effacer : il empeche les anciennes demandes de revenir apres une coupure.
+Toutes les fonctions de licences, attributions, Active Code, habillage et logos sont conservees.
+
+2. CLOUDFLARE REVENDEUR
+Decompresse kzplayer-cloudflare-revendeur-v100.zip.
+Deploie ses six fichiers a la racine du projet Pages REVENDEUR actuel : index.html, app-v100.js, style-v100.css, _worker.js, _headers, _routes.json.
+Recharge le panel. Le nouveau bouton doit apparaitre pour une demande en attente/en cours/en echec ou une demande locale non resolue.
+Tu peux alors annuler la demande bloquee. Si la reponse est incertaine, reclique le meme bouton : l'annulation est conservee et reprise sans supprimer silencieusement les references locales.
+Aucun changement du panel administrateur ou du panel client n'est requis.
+
+3. GITHUB — ARRET DES COMPILATIONS EN COURS ET PROTECTION DE LA PUBLICATION
+Decompresse KZ-Player-3.4.5-ANNULATION-V100.zip et copie son contenu a la racine du depot local KZPLAYER, en remplacant les fichiers.
+Le nouveau fichier tools/branding/brand_cancel.py doit aussi etre copie.
+Depuis la racine du depot :
+
+git add tools/branding A-LIRE-ANNULATION-V100.txt
+git commit -m "Ajoute l'annulation des compilations personnalisees"
+git push
+
+Le backend V100 doit etre deploye AVANT cette mise a jour GitHub. Le script refusera de continuer avec un backend trop ancien pour gerer l'annulation.
+Aucun fichier Android n'a change : la version reste 3.4.5 et aucune reinstallation n'est necessaire pour ajouter le bouton au panel.
+Les correctifs de delai Google et de lecture du certificat V3.0 sont conserves.
+
+COMPORTEMENT GITHUB
+- Un lot annule ne peut plus etre pris en charge ni valide comme APK disponible.
+- Le script actualise le statut pendant Gradle (environ toutes les vingt secondes, hors attente de reponse Google). S'il constate une annulation, il arrete le groupe de processus de ce lot, pas les compilations des autres marques.
+- Le statut est aussi controle avant publication et a la confirmation finale cote Google.
+- Si une annulation intervient pendant un envoi deja commence, le script tente de supprimer UNIQUEMENT le nouveau fichier du lot annule. Le fichier de l'APK precedente n'est pas supprime.
+- En cas d'incertitude reseau, le script n'annonce pas aveuglement un echec et ne supprime pas une APK potentiellement deja validee.
+- Une execution GitHub deja demarree avec l'ancien script ne peut pas recevoir le nouveau code en direct. Elle peut continuer son etape, mais le backend V100 refuse la validation tardive d'un lot annule. L'arret cooperatif s'applique aux executions utilisant le nouveau script.
+- Le bouton n'annule pas globalement un workflow partage par plusieurs marques et ne change aucune cle de signature.
+- Les mises a jour de code ne ressuscitent pas automatiquement la derniere demande annulee. Une nouvelle compilation demande une action explicite du revendeur.
+
+PREMIER ESSAI
+Actualiser la compilation > Annuler la compilation > confirmer > attendre Annulation confirmee.
+Puis Recommencer une compilation > nouveau nom/icone/logo > Lancer la nouvelle compilation.
+L'ancien lien de telechargement reste valable jusqu'a une nouvelle publication reussie.
+
+VALIDATION
+94 groupes de tests backend reussis, dont isolation entre comptes, annulation en attente/en cours, ancienne reponse tardive, interruption d'ecriture, ancien nonce refuse, conservation de l'APK publiee et reprise d'une nouvelle compilation.
+25 tests Python reussis : verification de certificat conservee, arret cooperatif, statut protege, delai borne, absence de lancement pour un lot annule et nettoyage du seul nouveau fichier annule.
+Navigateur Chromium reel avec Worker et Google/Drive/GitHub simules : annulation apres reponse perdue, confirmation idempotente, nouveau formulaire, nouveau lot, ancien telechargement conserve, aucun debit et affichage mobile.
+Aucun deploiement de production ni annulation de ta demande reelle n'a ete effectue depuis cette session. Tu dois installer les fichiers puis cliquer sur le bouton.

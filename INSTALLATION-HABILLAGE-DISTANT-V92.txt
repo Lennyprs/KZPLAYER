@@ -1,0 +1,59 @@
+KZ PLAYER — HABILLAGE DISTANT V92 / ANDROID 3.4.3
+
+CE QUI CHANGE
+Le revendeur dispose d'un onglet « Habillage à distance » : logos intérieurs carré et horizontal, fond des menus, nom intérieur, couleur de fond, couleur des textes d'accent de marque, assombrissement et aperçu indicatif. Publier ne déclenche pas GitHub et ne consomme aucun crédit.
+Classique, NewTivi et Netflix conservent leur disposition. Les fiches, cartes, affiches et éléments de navigation gardent leurs fonctions. Ce n'est pas un éditeur de mise en page arbitraire.
+Les écrans de lecture vidéo, le moteur du lecteur, les fournisseurs, les licences et les vérifications de signature ne sont pas modifiés.
+
+IMPORTANT : UNE PREMIÈRE MISE À JOUR EST OBLIGATOIRE
+Les APK antérieures ne possèdent pas ce moteur. Il faut compiler puis installer une première version compatible 3.4.3 dans chaque marque déjà distribuée. Ensuite, changer l'habillage n'exige plus de nouvelle APK. Les nouvelles marques compilées avec ces sources l'intègrent directement.
+L'icône du lanceur Android, le nom externe, le package et la signature ne sont pas modifiables librement à distance. Le formulaire « Mon APK personnalisée » reste réservé à l'identité compilée.
+
+ÉTAPE 1 — GOOGLE APPS SCRIPT, SANS CHANGER L'ADRESSE
+1. Ouvre ton projet Apps Script actuel.
+2. Ouvre le fichier qui contient tout ton backend Google.gs.
+3. Remplace son contenu par celui de code-license-cloudflare-v92.gs.
+4. Enregistre.
+5. Déployer > Gérer les déploiements.
+6. Sur ton déploiement /exec actuel : Modifier (crayon).
+7. Version > Nouvelle version > Déployer.
+Ne crée pas un nouveau déploiement. Ne change aucune propriété/secrète. Ne relance pas configureBrandBuild. Les secrets et le dossier Drive déjà configurés sont réutilisés. L'onglet technique apk_themes se crée automatiquement dans le même tableur.
+
+ÉTAPE 2 — SOURCES ANDROID / GITHUB
+1. Décompresse KZ-Player-V423-3.4.3-HABILLAGE-DISTANT.zip.
+2. Copie son contenu DANS ton dossier local KZPLAYER, au même niveau que app, tools et .github. Fusionne les dossiers, remplace les fichiers. Ne crée pas de sous-dossier KZ-Player dans KZPLAYER.
+3. Dans le terminal, place-toi dans ce dossier KZPLAYER, puis exécute exactement :
+   git add .
+   git commit -m "Ajout habillage distant 3.4.3"
+   git push origin main
+4. Attends les deux workflows GitHub verts. Un workflow vert sans marque enregistrée ne signifie pas qu'une APK personnalisée a été compilée.
+5. Si une marque existe, son circuit de mise à jour personnalisé garde le même package et la même signature. Installe une fois la nouvelle APK compatible avant de tester l'habillage.
+Le correctif de configuration GitHub (diagnostic GAS_URL / BRAND_CI_SECRET) est inclus et conservé. Aucun nouveau secret GitHub ou Cloudflare n'est nécessaire.
+
+ÉTAPE 3 — SITE CLOUDFLARE REVENDEUR UNIQUEMENT
+1. Décompresse kzplayer-cloudflare-revendeur-v92.zip.
+2. Ouvre ton projet Cloudflare Pages REVENDEUR actuel.
+3. Crée un nouveau déploiement avec les SIX fichiers à la racine : index.html, app-v92.js, style-v92.css, _worker.js, _headers, _routes.json.
+4. Garde le même domaine. Ne déploie pas ces fichiers sur le panel client ni sur le panel administrateur.
+
+UTILISATION PAR LE REVENDEUR
+1. Se connecter à son panel habituel.
+2. Créer sa marque une première fois via « Mon APK personnalisée », si ce n'est pas déjà fait.
+3. Ouvrir « Habillage à distance ».
+4. Choisir son nom de décor, ses logos, son fond et ses couleurs.
+5. Cliquer « Publier l'habillage — sans compilation ».
+6. Sur une APK compatible, le décor est vérifié au lancement/retour dans les menus puis environ toutes les deux minutes pendant que les menus restent ouverts. Prévoir quelques minutes selon le réseau et le cache serveur (jusqu'à cinq minutes pour les métadonnées). Ce n'est pas une notification push instantanée.
+7. Pour Noël, Halloween ou Pâques : modifier les images et publier à nouveau. Aucune date/saison automatique n'est programmée dans cette version.
+8. Pour revenir à l'habillage compilé d'origine : décocher « Activer l'habillage distant », puis publier.
+En cas de réponse incertaine : cliquer « Reprendre la publication ». Ne pas effacer le stockage du navigateur. Une même demande ne republie pas une ancienne révision au-dessus d'une nouvelle.
+
+FORMATS
+Logos importés PNG/JPG/WebP : source 4 Mo maximum ; normalisés à 1024 × 1024 et 1400 × 420, sans déformation ni recadrage du logo ; PNG final 130 ko maximum par logo. Une photo trop complexe peut être refusée.
+Fond : source PNG/JPG/WebP de 8 Mo maximum, 6000 pixels de côté maximum ; JPEG paysage 1920 × 1080 et 300 ko maximum après conversion. Un recadrage est possible pour adapter le fond à l'écran. Les logos et affiches de chaînes/films ne sont pas remplacés.
+Le dernier décor valide est conservé dans les fichiers privés de l'application pour fonctionner hors connexion. Une réponse incorrecte ne remplace pas ce cache.
+
+VALIDATION EFFECTUÉE
+59 groupes de tests backend avec services Google/Drive/GitHub simulés : isolation des marques, droits, images, révisions, rejeu sans retour arrière, crédits/licences inchangés, routes et sécurité.
+Test navigateur réel contre le Worker et le backend simulés : connexion, compilation existante, publication du décor, conversion des images, aperçu, retour au décor compilé, mobile, refus cross-site et sans session.
+Transformation Android vérifiée : XML valides, balises de marque Classique/NewTivi/Netflix et formats d'images d'origine conservés. Vérification des fichiers sensibles : lecteur, LivePreview, NewGuide, API, signature et mises à jour inchangés.
+Les sources Kotlin n'ont PAS été compilées ici et aucun essai sur appareil Android ni déploiement en production n'a été réalisé. La compilation GitHub puis un essai sur une APK de marque restent à valider.

@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.View
-import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
@@ -23,19 +22,22 @@ class PlaylistSetupActivity : BaseActivity() {
   setContentView(R.layout.activity_playlist_setup)
   input=findViewById(R.id.activeCodeInput)
   status=findViewById(R.id.setupStatus)
-  findViewById<TextView>(R.id.setupLicense).text="Licence : "+DeviceIdentity.licenseCode(this)
-  findViewById<Button>(R.id.chooseActiveCode).setOnClickListener{findViewById<View>(R.id.activeCodeBox).visibility=View.VISIBLE;input.requestFocus()}
-  findViewById<Button>(R.id.chooseManual).setOnClickListener{if(!busy)startActivity(Intent(this,AddPlaylistActivity::class.java))}
-  findViewById<Button>(R.id.submitActiveCode).setOnClickListener{redeem()}
-  findViewById<Button>(R.id.refreshSetup).setOnClickListener{refresh()}
+  findViewById<TextView>(R.id.setupLicense).text="Appareil : "+DeviceIdentity.licenseCode(this)
+  findViewById<View>(R.id.chooseActiveCode).setOnClickListener{showActiveCode()}
+  findViewById<View>(R.id.chooseManual).setOnClickListener{if(!busy)startActivity(Intent(this,AddPlaylistActivity::class.java))}
+  findViewById<View>(R.id.submitActiveCode).setOnClickListener{redeem()}
+  findViewById<View>(R.id.refreshSetup).setOnClickListener{refresh()}
+  findViewById<View>(R.id.backToChoices).setOnClickListener{showChoices()}
   input.setOnEditorActionListener{_,action,_->if(action==android.view.inputmethod.EditorInfo.IME_ACTION_DONE){redeem();true}else false}
   pending.getString("code",null)?.let{input.setText(it)}
-  FocusFx.apply(findViewById<View>(R.id.chooseActiveCode),findViewById<View>(R.id.chooseManual),findViewById<View>(R.id.submitActiveCode),findViewById<View>(R.id.refreshSetup))
-  findViewById<View>(R.id.chooseActiveCode).requestFocus()
+  FocusFx.apply(findViewById<View>(R.id.chooseActiveCode),findViewById<View>(R.id.chooseManual),findViewById<View>(R.id.submitActiveCode),findViewById<View>(R.id.refreshSetup),findViewById<View>(R.id.backToChoices))
+  findViewById<View>(R.id.chooseManual).requestFocus()
  }
+ private fun showActiveCode(){if(busy)return;findViewById<View>(R.id.setupChooser).visibility=View.GONE;findViewById<View>(R.id.activeCodePanel).visibility=View.VISIBLE;status.text="";input.requestFocus()}
+ private fun showChoices(){if(busy)return;findViewById<View>(R.id.activeCodePanel).visibility=View.GONE;findViewById<View>(R.id.setupChooser).visibility=View.VISIBLE;status.text="";findViewById<View>(R.id.chooseActiveCode).requestFocus()}
  override fun onResume(){super.onResume();if(Session.playlists.isNotEmpty())home()}
  private fun home(){if(leaving||isFinishing)return;leaving=true;pending.edit().clear().apply();startActivity(Intent(this,ThemePref.homeClass(this)));finish()}
- private fun loading(value:Boolean){busy=value;for(id in intArrayOf(R.id.chooseActiveCode,R.id.chooseManual,R.id.submitActiveCode,R.id.refreshSetup))findViewById<View>(id).isEnabled=!value;input.isEnabled=!value;findViewById<View>(R.id.setupProgress).visibility=if(value)View.VISIBLE else View.GONE}
+ private fun loading(value:Boolean){busy=value;for(id in intArrayOf(R.id.chooseActiveCode,R.id.chooseManual,R.id.submitActiveCode,R.id.refreshSetup,R.id.backToChoices))findViewById<View>(id).isEnabled=!value;input.isEnabled=!value;findViewById<View>(R.id.setupProgress).visibility=if(value)View.VISIBLE else View.GONE}
  private fun applyPlaylists(playlists:List<Playlist>){Session.playlists=LocalPlaylists.merge(playlists);Session.current=Session.playlists.firstOrNull{it.id==Session.current?.id}?:Session.playlists.firstOrNull();SessionCache.save(this);if(Session.playlists.isNotEmpty()){pending.edit().clear().commit();home()}else status.text="Aucune playlist disponible. Choisis Active Code ou Manuel."}
  private fun redeem(){
   if(busy)return

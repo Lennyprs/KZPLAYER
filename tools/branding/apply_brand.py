@@ -7,7 +7,7 @@ Image.MAX_IMAGE_PIXELS=1048576
 def read_png(text):
  if not text.startswith('data:image/png;base64,'):raise ValueError('PNG requis')
  raw=base64.b64decode(text.split(',',1)[1],validate=True)
- if len(raw)>130000:raise ValueError('Image trop volumineuse')
+ if len(raw)>900000:raise ValueError('Image trop volumineuse')
  im=Image.open(io.BytesIO(raw))
  if im.format!='PNG' or min(im.size)<32 or max(im.size)>2048 or im.width*im.height>1048576:raise ValueError('Image invalide')
  im.load();im=im.convert('RGBA')
@@ -41,7 +41,7 @@ def apply(root,m):
  palettes.write_text(text)
  # Version de marque seulement : la version de l APK principale reste inchangee.
  gradle=root/'app/build.gradle'
- gradle.write_text(re.sub(r'versionName "[0-9]+\.[0-9]+\.[0-9]+"','versionName "3.4.8"',gradle.read_text()))
+ gradle.write_text(re.sub(r'versionName "[0-9]+\.[0-9]+\.[0-9]+"','versionName "3.4.10"',gradle.read_text()))
  raw=res/'raw';raw.mkdir(exist_ok=True)
  (raw/'brand_ui.json').write_text(json.dumps({'accent':accent,'focus':focus}))
  # Le nouveau gestionnaire applique le style sans remplacer les listeners de navigation.
@@ -140,8 +140,14 @@ def apply(root,m):
    return block
   text=re.sub(r'<LinearLayout\b[^>]*>',home_card,text,flags=re.S)
   layout.write_text(text)
+ # Le nom saisi est la valeur finale exacte. Une substitution globale pouvait
+ # transformer une ancienne base "KZ Player PERSO" en "... PERSO PERSO".
  literal=name.replace('\\','\\\\').replace("'","\\'").replace('"','\\"').replace('@','\\@').replace('?','\\?')
- for f in res.rglob('*.xml'):
-  s=f.read_text();s=s.replace('KZ Player',escape(literal,{'"':'&quot;',"'":'&apos;'})).replace('KZPLAYER',escape(literal.upper(),{'"':'&quot;',"'":'&apos;'}));f.write_text(s)
- manifest=root/'app/src/main/AndroidManifest.xml';manifest.write_text(manifest.read_text().replace('android:label="KZ Player"','android:label="@string/app_name"'))
+ xml_name=escape(literal,{'"':'&quot;',"'":'&apos;'})
+ strings=res/'values/strings.xml';text=strings.read_text()
+ text=re.sub(r'(<string\s+name="app_name">).*?(</string>)',lambda m:m.group(1)+xml_name+m.group(2),text,flags=re.S)
+ strings.write_text(text)
+ manifest=root/'app/src/main/AndroidManifest.xml';text=manifest.read_text()
+ text=re.sub(r'android:label="[^"]*"', 'android:label="@string/app_name"', text, count=1)
+ manifest.write_text(text)
  return {'BRAND_ID':brand,'BRAND_PACKAGE':package,'VERSION_CODE':str(m['version_code'])}

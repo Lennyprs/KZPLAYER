@@ -1,0 +1,40 @@
+KZ PLAYER — CORRECTIF V107 (APK PERSONNALISEES 3.4.9)
+======================================================
+
+CE QUE CORRIGE CETTE VERSION
+- Le nom saisi dans le panel devient le nom Android final exact : aucun ajout automatique de « PERSO ».
+- Exemple testé : « KZ PLAYER PERSO » reste « KZ PLAYER PERSO », jamais « KZ PLAYER PERSO PERSO ».
+- Premier lancement entièrement refait : deux vraies cartes côte à côte, Licence manuelle et Active Code.
+- Active Code ouvre maintenant un écran dédié, avec logo, nom, couleurs et fond de la marque.
+- Logos beaucoup plus nets : transport jusqu’à 900 Ko, icône complexe au minimum 819 × 819 dans le test extrême, logo large conservé à 1400 × 420.
+- Les logos distants des menus et des paramètres acceptent la même qualité HD.
+
+ORDRE D’INSTALLATION
+1. BACKEND APPS SCRIPT
+   - Remplacer le code actuel par code-license-cloudflare-v107.gs.
+   - Enregistrer, puis déployer une NOUVELLE VERSION du déploiement Web existant.
+   - Conserver la même URL /exec.
+
+2. PANEL REVENDEUR CLOUDFLARE
+   - Décompresser kzplayer-cloudflare-revendeur-v107.zip.
+   - Envoyer tous les fichiers à la racine du projet Cloudflare Pages/Workers.
+   - Vérifier que index.html charge /app-v107.js et /style-v107.css.
+
+3. DEPOT GITHUB ANDROID
+   - Décompresser KZ-PATCH-APK-PERSONNALISEES-3.4.9-V107.zip À LA RACINE du dépôt KZPLAYER.
+   - Autoriser le remplacement des fichiers.
+   - Faire un commit normal puis pousser sur main. Ne pas mettre [skip ci] dans le message.
+
+   Exemple :
+     git add app tools .github
+     git commit -m "Correctif V107 nom exact, activation et logos HD"
+     git push origin main
+
+4. GITHUB ACTIONS
+   - Le push modifie app/** et tools/branding/** : le workflow build-brands.yml doit démarrer.
+   - Pour une marque déjà compilée, relancer une compilation depuis « Mon APK personnalisée » avec les logos originaux.
+   - Installer la nouvelle APK 3.4.9. Une ancienne APK ne peut pas récupérer le nouveau layout ni les ressources HD.
+
+IMPORTANT
+- Pour profiter de la netteté, renvoyer les fichiers logo originaux dans le panel ; une image déjà dégradée ne peut pas être reconstruite.
+- Utiliser de préférence un logo source de 1024 px ou plus pour l’icône, et 1400 × 420 ou plus pour le logo large.

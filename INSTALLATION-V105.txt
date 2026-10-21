@@ -1,0 +1,40 @@
+KZ PLAYER — LIVRAISON V105 / APK PERSONNALISEES 3.4.8
+
+CONTENU
+- Panel revendeur V105 complet, fichiers Cloudflare a la racine.
+- Backend Google V105 complet derive du V100/V102, pas un fragment.
+- Correctif des sources Android/CI pour les variantes de marque. Ce ZIP n'est PAS une APK.
+- Aucun changement du panel administrateur ni du panel client.
+
+UTILISATION
+Mon APK personnalisee comporte deux onglets : Identite (nom, icone Android, logo interne), et Couleurs et focus (HEX, couleur de focus liee ou independante, Contour/Halo/Agrandissement).
+Les apercus Accueil classique, Categories TV et Parametres reagissent localement aux champs et images. Cliquez les elements ou utilisez les fleches du clavier pour deplacer le focus.
+Habillage a distance propose son propre apercu a partir de la derniere marque publiee, pas de l'APK en preparation. Les donnees TV affichees sont des exemples, aucune playlist n'est chargee.
+Aucune compilation/publication pendant la saisie. Utiliser explicitement Compiler ou Publier.
+
+ORDRE D'INSTALLATION
+0. Sauvegarder le depot et le backend actuels. S'il reste une compilation/publication dont la reponse est incertaine, actualiser et verifier la meme demande. Ne pas creer de nouvelle reference pour la remplacer.
+1. Remplacer le contenu du fichier Apps Script par code-license-cloudflare-v105.gs dans le MEME projet Google. Conserver tableur, proprietes, secrets et deploiement existants. Gerer les deploiements > modifier le deploiement existant > nouvelle version, en conservant son URL /exec. Ne pas executer de reinitialisation ni changer les donnees.
+2. Extraire le ZIP du correctif a la RACINE du depot KZPLAYER. Il ne contient pas app/build.gradle : la version de l'application principale n'est pas changee par cette livraison. Le script configure 3.4.8 uniquement dans la copie de compilation de marque.
+3. Executer les trois commandes Git ci-dessous. Le marqueur [skip ci] evite les builds automatiques au push; ne pas relancer des jobs a l'aveugle.
+4. Deployer le ZIP panel revendeur V105 dans le projet Cloudflare REVENDEUR existant, pas dans les projets administrateur/client. Conserver variables/secrets et parametres existants. index.html, _worker.js et _routes.json doivent etre a la racine.
+5. Verifier d'abord toute ancienne demande incertaine via Actualiser/Reprendre, sans nouvelle reference. Quand aucune demande ne reste a resoudre, choisir nom/images/couleurs/focus et compiler depuis le panel. Installer la nouvelle APK personnalisee 3.4.8 pour disposer des nouveaux comportements natifs; ne pas installer l'APK principale a sa place.
+6. Dans Habillage a distance, verifier le brouillon puis cliquer Publier. Les modifications suivantes de cet habillage ne recompilent pas l'APK. Les nouveaux accents des tuiles/icones d'accueil exigent 3.4.8+; la publication correspondante est bloquee si la version publiee connue est trop ancienne. Les anciennes images distantes restent compatibles sans ce nouvel accent.
+
+LIMITES ET PERIMETRE
+La couleur et le style du focus sont compiles dans l'APK. Ils ne sont pas modifies par la publication distante. La palette des categories reste celle compilee. L'accent distant nouveau recolore les tuiles de l'accueil et les icones balisees, pas tous les fonds de tous les ecrans. L'icone du lanceur ne peut changer qu'a la compilation.
+Apercus web des menus Classique : ce ne sont pas des APK executees dans le navigateur. Les autres interfaces ne sont pas simulees. Un nom tres long est ajuste dans son cadre.
+Les lecteurs Media3, reseaux, decodages, licences, signatures, credits et canaux de marques sont conserves. Le gestionnaire de focus concerne les menus des marques et exclut les activites de lecture.
+La CI conserve le correctif de delai Google (60 s, une reprise de lecture d'etat seulement). Aucune reemission automatique des ecritures apres une reponse incertaine.
+
+VALIDATION
+Tests web locaux sur API simulee : deux onglets, HEX, trois styles de focus, images, changements distants, desactivation, soumission explicite, aucune ecriture de compilation/publication pendant l'edition, mobile 390 px, absence d'erreur JavaScript.
+Tests backend simules : hash historique, reprise nouvelle/ancienne demande, annulation, focus valide et conflit, menu_accent retrocompatible, apercu issu uniquement de la derniere marque publiee. Toutes les fonctions V100 sont conservees.
+Tests Python : generation des ressources XML/images pour plusieurs couleurs et trois styles; reprise lecture seule et ecritures en envoi unique. Tests Worker : validation et transmission du focus et de la couleur, ancien format accepte.
+Captures web inspectees sur ordinateur et mobile.
+AUCUNE compilation Gradle de cette version 3.4.8, installation TV ni publication/deploiement reel effectues ici. La compilation GitHub et les tests appareil restent a effectuer.
+
+COMMANDES GIT (apres extraction a la racine du depot)
+git add tools/branding/apply_brand.py tools/branding/build_brands.py tools/branding/brand_transport.py .github/workflows/build-brands.yml app/src/main/java/com/kzplayer/app/BaseActivity.kt app/src/main/java/com/kzplayer/app/RemoteBrandTheme.kt app/src/main/java/com/kzplayer/app/BrandMenuFocus.kt
+git commit -m "APK personnalisees : apercus et focus 3.4.8 [skip ci]"
+git push origin main

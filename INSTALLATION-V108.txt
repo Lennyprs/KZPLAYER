@@ -1,0 +1,22 @@
+KZ PLAYER — CORRECTIF COULEURS DYNAMIQUES V108 / APK 3.4.10
+================================================================
+
+Ce patch remplace le patch Android V107.
+
+RÉSULTAT
+- Player officiel : rouge officiel KZ Player.
+- APK personnalisée : la couleur choisie dans le panel est appliquée partout sur les deux nouveaux écrans.
+- Habillage distant : une nouvelle couleur publiée recolore également ces écrans sans couleur résiduelle.
+- Sont synchronisés : cartes, bordures, icônes, focus, titre Activation, champ du code, bouton principal et actions secondaires.
+- Variantes contrôlées : rouge, vert, bleu et jaune.
+
+INSTALLATION
+1. Décompresser KZ-PATCH-APK-COULEURS-DYNAMIQUES-3.4.10-V108.zip à la racine du dépôt GitHub KZPLAYER.
+2. Autoriser le remplacement des fichiers.
+3. Commit normal, sans [skip ci] :
+   git add app tools
+   git commit -m "V108 couleurs dynamiques des écrans d activation"
+   git push origin main
+4. Recompiler l’APK personnalisée depuis le panel et installer la nouvelle version 3.4.10.
+
+Le panel Cloudflare V107 et le backend Apps Script V107 restent valables : il n’est pas nécessaire de les remplacer une seconde fois.

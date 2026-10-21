@@ -1,16 +1,133 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true" android:background="@drawable/bg_home"><LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="28dp" android:gravity="center_horizontal">
-<ImageView android:layout_width="220dp" android:layout_height="66dp" android:src="@drawable/kz_logo_wide" android:scaleType="fitCenter" android:contentDescription="Logo de l’application" />
-<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:text="Configure ta première playlist" android:textColor="@color/text" android:textSize="24sp" android:textStyle="bold" android:layout_marginTop="16dp" />
-<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:text="Tu as reçu un code à 6 chiffres de ton revendeur ? Choisis Active Code. Sinon, ajoute tes identifiants avec Manuel." android:textColor="@color/muted" android:textSize="16sp" android:layout_marginTop="10dp" />
-<TextView android:id="@+id/setupLicense" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:textColor="@color/muted" android:layout_marginTop="10dp" />
-<Button android:id="@+id/chooseActiveCode" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="18dp" android:text="Active Code — j’ai un code à 6 chiffres" android:textColor="@color/text" android:background="@drawable/bg_button_focus" />
-<Button android:id="@+id/chooseManual" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="12dp" android:text="Manuel — ajouter mes identifiants IPTV" android:textColor="@color/text" android:background="@drawable/bg_button_focus" />
-<LinearLayout android:id="@+id/activeCodeBox" android:visibility="gone" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp">
-<EditText android:id="@+id/activeCodeInput" android:layout_width="match_parent" android:layout_height="56dp" android:inputType="number" android:digits="0123456789" android:maxLength="6" android:singleLine="true" android:imeOptions="actionDone" android:hint="Code à 6 chiffres" android:gravity="center" android:textSize="26sp" android:textColor="@color/text" android:textColorHint="@color/muted" android:background="@drawable/bg_card" android:padding="10dp" android:importantForAutofill="no" />
-<Button android:id="@+id/submitActiveCode" android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="12dp" android:text="Récupérer ma playlist" android:textColor="@color/text" android:background="@drawable/bg_button_focus" />
-</LinearLayout>
-<ProgressBar android:id="@+id/setupProgress" android:layout_width="32dp" android:layout_height="32dp" android:layout_marginTop="12dp" android:visibility="gone" />
-<TextView android:id="@+id/setupStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:textColor="@color/muted" android:layout_marginTop="12dp" />
-<Button android:id="@+id/refreshSetup" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="12dp" android:text="Actualiser les playlists de ma licence" android:textColor="@color/text" android:background="@drawable/bg_button_focus" />
-</LinearLayout></ScrollView>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/bg_home" android:padding="24dp">
+
+    <LinearLayout android:id="@+id/setupChooser"
+        android:layout_width="760dp" android:layout_height="wrap_content"
+        android:layout_gravity="center" android:gravity="center_horizontal"
+        android:orientation="vertical">
+        <FrameLayout android:layout_width="300dp" android:layout_height="84dp" android:tag="brand:header">
+            <ImageView android:layout_width="match_parent" android:layout_height="match_parent"
+                android:adjustViewBounds="true" android:contentDescription="@string/app_name"
+                android:scaleType="fitCenter" android:src="@drawable/kz_logo_wide" android:tag="brand:wide" />
+            <TextView android:layout_width="match_parent" android:layout_height="match_parent"
+                android:autoSizeMaxTextSize="28sp" android:autoSizeMinTextSize="14sp"
+                android:autoSizeStepGranularity="1sp" android:autoSizeTextType="uniform"
+                android:gravity="center" android:maxLines="1" android:text="@string/app_name"
+                android:textColor="?attr/kzAccent" android:textStyle="bold"
+                android:visibility="gone" android:tag="brand:name" />
+        </FrameLayout>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="18dp" android:gravity="center"
+            android:text="Comment veux-tu ajouter ta playlist ?" android:textColor="@color/text"
+            android:textSize="27sp" android:textStyle="bold" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:gravity="center"
+            android:text="Choisis une méthode. Tu pourras la modifier plus tard dans les paramètres."
+            android:textColor="@color/muted" android:textSize="15sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="24dp" android:gravity="center" android:orientation="horizontal">
+            <LinearLayout android:id="@+id/chooseManual"
+                android:layout_width="300dp" android:layout_height="200dp"
+                android:background="@drawable/setup_choice_card" android:clickable="true"
+                android:focusable="true" android:gravity="center"
+                android:nextFocusRight="@id/chooseActiveCode" android:orientation="vertical"
+                android:padding="24dp" android:tag="brand:setup-card">
+                <ImageView android:layout_width="52dp" android:layout_height="52dp"
+                    android:contentDescription="Saisie manuelle" android:src="@drawable/ic_setup_manual"
+                    android:tint="?attr/kzAccent" android:tag="brand:accent-icon" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp" android:text="Licence manuelle"
+                    android:textColor="@color/text" android:textSize="21sp" android:textStyle="bold" />
+                <TextView android:layout_width="240dp" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:gravity="center"
+                    android:text="Entre directement tes identifiants IPTV"
+                    android:textColor="@color/muted" android:textSize="14sp" />
+            </LinearLayout>
+            <Space android:layout_width="20dp" android:layout_height="1dp" />
+            <LinearLayout android:id="@+id/chooseActiveCode"
+                android:layout_width="300dp" android:layout_height="200dp"
+                android:background="@drawable/setup_choice_card" android:clickable="true"
+                android:focusable="true" android:gravity="center"
+                android:nextFocusLeft="@id/chooseManual" android:orientation="vertical"
+                android:padding="24dp" android:tag="brand:setup-card">
+                <ImageView android:layout_width="52dp" android:layout_height="52dp"
+                    android:contentDescription="Activation par code" android:src="@drawable/ic_setup_code"
+                    android:tint="?attr/kzAccent" android:tag="brand:accent-icon" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp" android:text="Active Code"
+                    android:textColor="@color/text" android:textSize="21sp" android:textStyle="bold" />
+                <TextView android:layout_width="240dp" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:gravity="center"
+                    android:text="Utilise le code transmis par ton revendeur"
+                    android:textColor="@color/muted" android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
+        <TextView android:id="@+id/refreshSetup"
+            android:layout_width="wrap_content" android:layout_height="48dp"
+            android:layout_marginTop="18dp" android:background="@drawable/setup_text_action"
+            android:clickable="true" android:focusable="true" android:gravity="center"
+            android:paddingLeft="18dp" android:paddingRight="18dp"
+            android:text="J’ai déjà une playlist sur cette licence · Actualiser"
+            android:textColor="@color/muted" android:textSize="14sp" android:tag="brand:setup-secondary" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/activeCodePanel"
+        android:layout_width="720dp" android:layout_height="wrap_content"
+        android:layout_gravity="center" android:background="@drawable/setup_activation_panel"
+        android:gravity="center_horizontal" android:orientation="vertical"
+        android:paddingLeft="38dp" android:paddingTop="26dp"
+        android:paddingRight="38dp" android:paddingBottom="24dp" android:visibility="gone"
+        android:tag="brand:setup-panel">
+        <ImageView android:layout_width="300dp" android:layout_height="82dp"
+            android:adjustViewBounds="true" android:contentDescription="@string/app_name"
+            android:scaleType="fitCenter" android:src="@drawable/kz_logo_wide" android:tag="brand:wide" />
+        <TextView android:id="@+id/activationTitle"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:gravity="center" android:maxLines="1"
+            android:text="@string/app_name" android:textColor="@color/text"
+            android:textSize="25sp" android:textStyle="bold" android:tag="brand:name" />
+        <TextView android:id="@+id/activationSubtitle"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="5dp" android:gravity="center" android:letterSpacing="0.18"
+            android:text="ACTIVATION" android:textAllCaps="true" android:textColor="?attr/kzAccent"
+            android:textSize="13sp" android:textStyle="bold" android:tag="brand:accent" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" android:gravity="center"
+            android:text="Entre le code fourni avec ton abonnement.&#10;Le serveur et tes identifiants seront ajoutés automatiquement."
+            android:textColor="@color/text" android:textSize="15sp" />
+        <EditText android:id="@+id/activeCodeInput"
+            android:layout_width="match_parent" android:layout_height="60dp"
+            android:layout_marginTop="18dp" android:background="@drawable/setup_code_input"
+            android:digits="0123456789" android:gravity="center" android:hint="000000"
+            android:imeOptions="actionDone" android:importantForAutofill="no"
+            android:inputType="number" android:letterSpacing="0.24" android:maxLength="6"
+            android:padding="10dp" android:singleLine="true" android:textColor="@color/text"
+            android:textColorHint="@color/muted" android:textSize="26sp" android:tag="brand:setup-input" />
+        <TextView android:id="@+id/submitActiveCode"
+            android:layout_width="match_parent" android:layout_height="58dp"
+            android:layout_marginTop="14dp" android:background="@drawable/setup_primary_action"
+            android:clickable="true" android:focusable="true" android:gravity="center"
+            android:text="ACTIVER ET CONTINUER" android:textColor="@color/text"
+            android:textSize="15sp" android:textStyle="bold" android:tag="brand:setup-primary" />
+        <ProgressBar android:id="@+id/setupProgress"
+            android:layout_width="30dp" android:layout_height="30dp"
+            android:layout_marginTop="12dp" android:visibility="gone" />
+        <TextView android:id="@+id/setupStatus"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:gravity="center" android:minHeight="20dp"
+            android:textColor="@color/muted" android:textSize="13sp" />
+        <TextView android:id="@+id/setupLicense"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:gravity="center"
+            android:textColor="@color/muted" android:textSize="12sp" />
+        <TextView android:id="@+id/backToChoices"
+            android:layout_width="wrap_content" android:layout_height="44dp"
+            android:layout_marginTop="8dp" android:background="@drawable/setup_text_action"
+            android:clickable="true" android:focusable="true" android:gravity="center"
+            android:paddingLeft="18dp" android:paddingRight="18dp"
+            android:text="← Choisir une autre méthode" android:textColor="@color/muted"
+            android:textSize="13sp" android:tag="brand:setup-secondary" />
+    </LinearLayout>
+</FrameLayout>

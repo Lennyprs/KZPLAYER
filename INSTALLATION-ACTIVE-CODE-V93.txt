@@ -1,0 +1,74 @@
+KZ PLAYER — ACTIVE CODE V93 / APPLICATION 3.4.4 (SOURCE V424)
+
+Cette livraison complète inclut l'habillage distant V92 et les correctifs précédents. Tu peux passer directement à la 3.4.4 : inutile d'installer d'abord la 3.4.3.
+Aucune modification du lecteur, de Media3, des flux IPTV, des règles de crédit, de la durée des licences ou des contrôles de signature. L'API ajoute uniquement la remise de la playlist par code.
+
+FONCTIONNEMENT REVENDEUR
+Dans « Activer une licence », choisir :
+- Licence seule : activation habituelle, un crédit de la durée choisie.
+- Licence + Active Code : renseigner la playlist IPTV ; la même activation consomme un seul crédit, sans supplément.
+Types pris en charge : Xtream (adresse serveur, identifiant, mot de passe), lien M3U complet, Stalker (portail, MAC, numéro de série facultatif).
+Le code à six chiffres est affiché et peut être copié. Transmettre ces six chiffres au client, sans lui faire recopier tous ses identifiants.
+La playlist reste préparée sur le backend privé. Elle n'apparaît pas encore dans les listes de lecture de la licence avant la saisie du code sur le bon appareil.
+
+FONCTIONNEMENT CLIENT
+L'appareil doit être enregistré comme avant : lancer KZ Player une première fois et communiquer son code KZ au revendeur.
+Après activation de la licence et lorsqu'aucune playlist n'est configurée, la 3.4.4 affiche :
+1. Active Code — j'ai un code à six chiffres.
+2. Manuel — ajouter mes identifiants IPTV.
+Avec Active Code : le client saisit les six chiffres, valide, et sa playlist est ajoutée à sa licence puis chargée dans l'application. Il est ensuite dirigé vers son accueil habituel, Classique, NewTivi ou Netflix.
+Avec Manuel : l'ajout Xtream/M3U/Stalker habituel reste inchangé.
+Une licence qui possède déjà une playlist ne passe pas par cet écran de configuration initiale. Les listes locales existantes sont aussi conservées.
+Si l'appareil était resté ouvert sur « Licence en attente », utiliser Recharger ou relancer l'application après l'activation.
+
+SÉCURITÉ ET REPRISE
+Le code est lié à UNE licence et à SON appareil. Il ne permet pas d'activer un autre appareil et ne remplace pas le code KZ.
+Usage unique, valable sept jours à partir de son émission. Cela ne modifie PAS la durée de la licence (un an ou illimitée).
+Après cinq tentatives erronées : blocage de quinze minutes pour cet appareil. Les tentatives sont conservées côté serveur, pas uniquement dans le cache.
+En cas de réponse incertaine après la saisie, réessayer le même code ou utiliser Actualiser dans l'application. Une même demande ne crée pas deux playlists.
+Dans le panel : Reprendre récupère une demande interrompue, sans ressaisir les identifiants IPTV ni débiter à nouveau. Les demandes inachevées sont aussi retrouvées après reconnexion depuis un autre navigateur.
+Ne pas supprimer le stockage du navigateur pendant une demande incertaine. Les identifiants IPTV ne sont pas stockés dans localStorage : uniquement les références nécessaires à la reprise.
+Une demande non démarrée peut être annulée/résolue. Une licence déjà activée n'est pas désactivée ni remboursée par cette commande ; il faut terminer la création du code avec Reprendre.
+Dans « Mes licences », Créer / remplacer l'Active Code permet de préparer un code pour une licence active déjà vendue par ce revendeur et encore sans playlist serveur. Aucun crédit supplémentaire. Un nouveau code remplace l'ancien code non utilisé.
+Une playlist existante n'est jamais écrasée par un code. Pour une licence déjà configurée, conserver les outils habituels de gestion des playlists.
+
+INSTALLATION — ÉTAPE 1 : GOOGLE APPS SCRIPT
+1. Ouvrir le projet Apps Script actuel.
+2. Remplacer le contenu du backend par code-license-cloudflare-v93.gs.
+3. Enregistrer.
+4. Déployer > Gérer les déploiements > crayon du déploiement /exec actuel.
+5. Version > Nouvelle version > Déployer.
+Garder la même adresse, le même tableur et les mêmes propriétés. Aucun nouveau secret à créer, aucune fonction d'initialisation à exécuter.
+Deux onglets techniques sont ajoutés automatiquement : activation_codes et activation_code_attempts. Ne pas les publier ou partager avec les clients/revendeurs : ils contiennent des données privées de configuration.
+
+ÉTAPE 2 : GITHUB / APK
+1. Décompresser KZ-Player-V424-3.4.4-ACTIVE-CODE.zip.
+2. Copier son contenu directement dans le dossier local KZPLAYER, au même niveau que app, tools et .github ; fusionner les dossiers et remplacer les fichiers. Ne pas créer un sous-dossier imbriqué.
+3. Dans ce dossier, exécuter :
+git add .
+git commit -m "Ajout Active Code 3.4.4"
+git push origin main
+4. Attendre les workflows verts. Vérifier qu'une marque réellement enregistrée est bien compilée ; un workflow vert avec zéro marque ne prouve pas l'existence d'une APK personnalisée.
+5. Installer l'APK 3.4.4 sur l'appareil utilisé pour le test. Les anciennes versions ne peuvent pas afficher le nouveau choix sans cette mise à jour.
+Les marques gardent leur package, signature et système de mise à jour. L'habillage distant reste inclus. Les secrets GitHub et le diagnostic de configuration sont conservés.
+
+ÉTAPE 3 : CLOUDFLARE REVENDEUR
+1. Décompresser kzplayer-cloudflare-revendeur-v93.zip.
+2. Dans le projet Pages REVENDEUR actuel, déployer les six fichiers directement à la racine : index.html, app-v93.js, style-v93.css, _worker.js, _headers, _routes.json.
+3. Garder le même domaine.
+Ne pas déposer ces fichiers sur le panel client ou sur le panel administrateur. Ces deux sites ne nécessitent pas de redéploiement pour le nouveau parcours standard.
+
+PREMIER TEST CONSEILLÉ
+Utiliser une licence de test sans playlist et un accès IPTV que tu es autorisé à utiliser.
+- Ouvrir l'application sur l'appareil et relever son code KZ.
+- Revendeur : sélectionner Licence + Active Code, choisir la durée et renseigner l'accès IPTV.
+- Vérifier un seul crédit débité et six chiffres affichés.
+- Appareil : Recharger si nécessaire, puis Active Code, saisir les six chiffres et valider.
+- Vérifier la présence d'une seule playlist, l'accès normal aux catégories et la lecture habituelle.
+- Tester aussi une autre licence en Licence seule puis choisir Manuel.
+
+VALIDATION DÉJÀ EFFECTUÉE
+73 groupes de tests backend avec services Google/Drive/GitHub simulés : anciennes fonctions, habillage, activation simple/combinée, non-duplication du débit, expiration, limite de tentatives durable, liaison licence/appareil, formats Xtream/M3U/Stalker, reprise après coupure d'écriture de licence et de playlist, annulation et remplacement.
+Navigateur réel contre Worker/backend simulés : choix des modes, génération et affichage du code, absence d'identifiants IPTV dans localStorage, activation simple préservée, création gratuite pour licence existante, mobile, et régressions de l'habillage/compilation.
+XML Android validés et fichiers de lecture protégés comparés. Les algorithmes existants d'Api.kt sont inchangés : une nouvelle méthode est ajoutée uniquement pour la remise par code.
+Aucune compilation Kotlin/APK locale, aucun déploiement en production ni essai sur appareil Android n'ont été réalisés. La compilation GitHub et le premier test sur appareil restent à valider.
