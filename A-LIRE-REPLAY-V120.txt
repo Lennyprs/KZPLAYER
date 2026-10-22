@@ -1,0 +1,50 @@
+KZ PLAYER 3.5.6 — V120 — ARRET SUR HTTP 429
+
+CONSTAT DE TA CAPTURE
+Les variantes affichent principalement HTTP 429, puis des 403 et des 404.
+HTTP 429 signifie que le serveur demande de limiter les requetes. Poursuivre les formats et changer de User-Agent n'est pas une bonne reponse a ce statut.
+Un 403 apres cette serie peut etre lie a la limitation, mais la capture ne prouve pas la cause du premier refus. Le correctif ne pretend pas garantir a lui seul une lecture reussie sur ton fournisseur.
+
+CORRECTION
+- Pas de nouvelle variante ni de bascule VLC/IPTV apres detection du 429.
+- Pas de reprise automatique Media3 sur ce statut, uniquement dans le parcours replay.
+- Le watchdog de demarrage ne peut pas relancer la rafale pendant la pause.
+- La source reseau bloque localement les nouveaux essais replay sur cet hote pendant le delai. Une requete deja partie au moment du refus ne peut pas etre retroactivement retiree du serveur.
+- Delai Retry-After interprete en secondes ou en date HTTP. Par securite, minimum une seconde et maximum vingt-quatre heures. Sans valeur exploitable : pause locale de cinq minutes.
+- La pause est conservee dans les preferences de l'application. Fermer/rouvrir l'ecran ou l'app ne l'efface pas.
+- Seuls le nom d'hote et l'echeance sont conserves, jamais l'utilisateur ni le mot de passe IPTV.
+- Un 429 de segment HLS met aussi en pause le fournisseur d'origine.
+- Le premier echec observe est conserve dans le diagnostic, meme si la trace des derniers essais est remplie.
+- Les autres erreurs, notamment 403/404, ne sont pas arbitrairement requalifiees en limitation 429.
+
+CONSERVE
+Les correctifs V118/V119 : connexion de lecture unique, controles d'archive sur cette connexion, variantes UNIX, code HTTP numerique, controles date/live, donnees TS/manifestes et seek preserves.
+Reglages des decodeurs, buffers et reprises du direct/films/series hors replay inchanges.
+Aucun changement du backend Google, des panels, des licences ou des cles de signature.
+La pause s'applique au replay KZ, pas aux autres applications ni aux telechargements qui utilisent leur propre moteur.
+
+INSTALLATION
+1. Decompresse KZ-PLAYER-GITHUB-COMPLET-3.5.6-V120-REPLAY.zip et copie son contenu a la racine du depot local en remplacant les fichiers.
+2. Le nouveau fichier ReplayRateLimit.java doit aussi etre copie.
+3. Depuis la racine du depot :
+
+git add app/build.gradle app/src/main/java/com/kzplayer/app/Replay* app/src/main/java/com/kzplayer/app/PlayerActivity.kt A-LIRE-REPLAY-V120.txt
+git commit -m "Arrete les reprises replay apres HTTP 429 - 3.5.6"
+git push
+
+4. Attends la compilation signee puis installe l'APK 3.5.6 en mise a jour, sans desinstaller.
+Aucun changement Google/Cloudflare necessaire.
+Les anciens guides presents sont historiques : pour cette version, suis ce guide V120.
+
+AVANT LE PROCHAIN ESSAI
+Laisse le compte et le serveur au repos au moins cinq minutes sans relancer les replays ; un blocage fournisseur peut durer davantage. Ferme les autres lecteurs sur ce compte et ne lance pas de telechargement IPTV simultane pendant cet essai.
+Ensuite, fais un seul essai avec la 3.5.6.
+Si le serveur renvoie encore 429, KZ doit annoncer la pause au lieu d'enchainer les variantes : ne contourne pas cette attente.
+Si, apres repos, le premier echec est HTTP 403 sans 429 prealable, ce refus necessite encore un diagnostic de la requete/autorisation. Une photo de la fenetre indiquant Premier echec observe sera utile. Ne transmets jamais tes identifiants.
+
+VALIDATION
+79 tests Java reussis en simulation : 29 URL/transport, 25 source de lecture et 25 limitation.
+Un test reproduit douze ouvertures de variantes : apres le premier 429, une seule requete atteint le serveur simule, les onze suivantes sont bloquees localement.
+Tests Retry-After, persistance simulee, expiration, isolation par hote, absence d'identifiants stockes, fermeture de connexion et maintien des protections precedentes.
+Les helpers Java de production sont compiles pour Java 17 avec interfaces Android/Media3/HTTP simulees. Verification de la structure de la politique Kotlin ; pas de compilation assembleRelease complete ni de test sur ton serveur/ta television dans cette session.
+Trois fichiers d'origine modifies depuis V119, plus ReplayRateLimit.java et ce guide. Les autres fichiers sont preserves octet pour octet.

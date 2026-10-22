@@ -44,7 +44,10 @@ public final class ReplayDataSource implements DataSource {
         upstream.addTransferListener(listener);
     }
     @Override public long open(DataSpec spec) throws IOException {
-        prefix=new byte[0];prefixOffset=0;opened=true;
+        prefix=new byte[0];prefixOffset=0;
+        long wait=Math.max(ReplayRateLimit.remainingMs(spec.uri.toString()),ReplayRateLimit.remainingMs(roots));
+        if(wait>0L)throw new ReplayRateLimit.Limited(wait);
+        opened=true;
         try {
             long length=upstream.open(spec);
             // Les segments HLS ne sont pas des manifestes : ne pas les lire/decaler.
@@ -94,6 +97,8 @@ public final class ReplayDataSource implements DataSource {
             prefix=out.toByteArray();
             return length;
         } catch (IOException | RuntimeException e) {
+            ReplayRateLimit.record(spec.uri.toString(),e);
+            for(String root:roots)ReplayRateLimit.record(root,e);
             try { close(); } catch (IOException ignored) { }
             throw e;
         }

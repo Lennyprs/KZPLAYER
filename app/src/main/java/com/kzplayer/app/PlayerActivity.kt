@@ -29,10 +29,32 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private var candidates: List<String> = emptyList()
     private var isReplayMode = false
+    private var replayQuotaShown = false
+    private fun showReplayRateLimit() {
+        recoveryHandler.removeCallbacks(replayStartupWatchdog)
+        recoveryHandler.removeCallbacks(startupWatchdog)
+        player?.stop()
+        if (replayQuotaShown || isFinishing || isDestroyed) return
+        replayQuotaShown = true
+        val seconds = ((ReplayRateLimit.remainingMs(watchUrl) + 999L) / 1000L).coerceAtLeast(1L)
+        val delay = if (seconds >= 60L) "${(seconds + 59L) / 60L} min" else "$seconds s"
+        val first = intent.getStringExtra("replayFirstFailure").orEmpty()
+        val firstInfo = if (first.isBlank()) "" else "\n\nPremier echec observe : $first"
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Replay temporairement limite : HTTP 429")
+            .setMessage("Le serveur demande de ralentir les requetes.\nLes essais sont arretes, sans changement de variante ni de lecteur.\n\nAttends encore environ $delay avant un nouvel essai. Un delai serveur plus long reste possible.$firstInfo")
+            .setPositiveButton("Retour") { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
+    }
     // Repli replay borne : aucun changement de chaine, aucune boucle infinie.
     private val replayStartupWatchdog = object : Runnable {
         override fun run() {
             val p = player ?: return
+            if (isReplayMode && ReplayRateLimit.remainingMs(watchUrl) > 0L) {
+                showReplayRateLimit()
+                return
+            }
             if (!isReplayMode || demarrageOk || !p.playWhenReady ||
                 ReplayUrls.replayStarted(p.playbackState == Player.STATE_READY, p.videoSize.width, p.currentPosition)) return
             if (candIdx < candidates.size - 1) {
@@ -52,6 +74,10 @@ class PlayerActivity : AppCompatActivity() {
     }
     // V118 : une seule bascule d'identite HTTP, exclusivement pour le replay Xtream.
     private fun retryReplayUserAgent(): Boolean {
+        if (isReplayMode && ReplayRateLimit.remainingMs(watchUrl) > 0L) {
+            showReplayRateLimit()
+            return true
+        }
         if (!isReplayMode || Session.current?.type == "stalker" ||
             intent.getBooleanExtra("replayUaRetry", false)) return false
         intent.putExtra("replayUaRetry", true)
@@ -78,9 +104,12 @@ class PlayerActivity : AppCompatActivity() {
         val lines = intent.getStringArrayListExtra("replayFailureTrace") ?: arrayListOf<String>()
         val ua = if (intent.getStringExtra("forceUa").orEmpty().startsWith("VLC")) "VLC" else "IPTV"
         lines.add("Variante ${candIdx + 1}/${candidates.size} - $ua : $detail")
+        if (!intent.hasExtra("replayFirstFailure")) intent.putExtra("replayFirstFailure", lines.last())
         while (lines.size > 12) lines.removeAt(0)
         intent.putStringArrayListExtra("replayFailureTrace", lines)
-        return lines.joinToString("\n")
+        val first = intent.getStringExtra("replayFirstFailure").orEmpty()
+        val prefix = if (first.isNotBlank() && lines.firstOrNull() != first) "Premier echec observe : $first\nDerniers essais :\n" else ""
+        return prefix + lines.joinToString("\n")
     }
     private var candIdx = 0
     // v386 : retenu le temps de la session. true = les films/series Stalker sont demandes
@@ -308,6 +337,19 @@ class PlayerActivity : AppCompatActivity() {
         val url = intent.getStringExtra("url") ?: ""
         watchUrl = url
         isReplayMode = intent.getBooleanExtra("replay", false) || ReplayUrls.isArchiveUrl(url)
+        if (isReplayMode) {
+            val quotaPrefs = applicationContext.getSharedPreferences("kz_replay_rate_v120", android.content.Context.MODE_PRIVATE)
+            ReplayRateLimit.setStore(object : ReplayRateLimit.Store {
+                override fun read(host: String): Long = quotaPrefs.getLong(host, 0L)
+                override fun write(host: String, untilMs: Long) {
+                    quotaPrefs.edit().putLong(host, untilMs).apply()
+                }
+            })
+            if (ReplayRateLimit.remainingMs(url) > 0L) {
+                showReplayRateLimit()
+                return
+            }
+        }
         watchTitle = title
         watchLogo = intent.getStringExtra("logo") ?: ""
         watchKind = intent.getStringExtra("historyKind") ?: "live"
@@ -411,7 +453,17 @@ class PlayerActivity : AppCompatActivity() {
         // chargement tournait pendant des dizaines de secondes sans rien afficher.
         // v388 : un morceau de flux qui repond mal est reessaye plusieurs fois avant
         // d abandonner (sur les connexions instables l image se figeait tout de suite).
-        val errPolicy = androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(3)
+        val errPolicy = if (isReplayMode) {
+            object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(3) {
+                override fun getRetryDelayMsFor(
+                    loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo
+                ): Long {
+                    return if (ReplayRateLimit.isLimited(loadErrorInfo.exception)) {
+                        androidx.media3.common.C.TIME_UNSET
+                    } else super.getRetryDelayMsFor(loadErrorInfo)
+                }
+            }
+        } else androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(3)
         // v413 : extracteur Media3 strictement standard pour le direct ET la VOD.
         // Les flags TS ALLOW_NON_IDR / DETECT_ACCESS_UNITS forces par KZ peuvent
         // produire une premiere frame puis bloquer la video sur certains flux,
@@ -608,6 +660,10 @@ class PlayerActivity : AppCompatActivity() {
                 if (isReplayMode) {
                     val replayDetail = replayFailureDetail(error, error.errorCodeName)
                     val replayTrace = rememberReplayFailure(replayDetail)
+                    if (ReplayRateLimit.isLimited(error)) {
+                        showReplayRateLimit()
+                        return
+                    }
                     recoveryHandler.removeCallbacks(replayStartupWatchdog)
                     recoveryHandler.removeCallbacks(startupWatchdog)
                     val replayUrl = candidates.getOrNull(candIdx).orEmpty()
@@ -708,6 +764,10 @@ class PlayerActivity : AppCompatActivity() {
     private fun playCurrent() {
         val p = player ?: return
         val u = candidates.getOrNull(candIdx) ?: return
+        if (isReplayMode && ReplayRateLimit.remainingMs(watchUrl) > 0L) {
+            showReplayRateLimit()
+            return
+        }
         if (isReplayMode) demarrageOk = false
         lastFrames = -1L
         lastFramesTs = SystemClock.elapsedRealtime()
