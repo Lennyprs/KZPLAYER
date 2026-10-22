@@ -28,6 +28,26 @@ class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
     private var candidates: List<String> = emptyList()
+    private var isReplayMode = false
+    // Repli replay borne : aucun changement de chaine, aucune boucle infinie.
+    private val replayStartupWatchdog = object : Runnable {
+        override fun run() {
+            val p = player ?: return
+            if (!isReplayMode || (p.playbackState == Player.STATE_READY && p.videoSize.width > 0)) return
+            if (candIdx < candidates.size - 1) {
+                candIdx++
+                intent.putExtra("replayCandidateIndex", candIdx)
+                playCurrent()
+            } else {
+                p.pause()
+                androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
+                    .setTitle("Replay indisponible")
+                    .setMessage("Aucune variante d'archive n'a demarre. Aucun basculement vers le direct.")
+                    .setPositiveButton("OK") { d, _ -> d.dismiss() }
+                    .show()
+            }
+        }
+    }
     private var candIdx = 0
     // v386 : retenu le temps de la session. true = les films/series Stalker sont demandes
     // sans les en-tetes MAG (repli automatique quand le serveur les refuse).
@@ -253,6 +273,7 @@ class PlayerActivity : AppCompatActivity() {
         val title = intent.getStringExtra("title") ?: ""
         val url = intent.getStringExtra("url") ?: ""
         watchUrl = url
+        isReplayMode = intent.getBooleanExtra("replay", false) || ReplayUrls.isArchiveUrl(url)
         watchTitle = title
         watchLogo = intent.getStringExtra("logo") ?: ""
         watchKind = intent.getStringExtra("historyKind") ?: "live"
@@ -343,7 +364,9 @@ class PlayerActivity : AppCompatActivity() {
         // (#EXTVLCOPT:http-user-agent / #EXTHTTP). Sans lui, le serveur ne renvoie
         // rien du tout : la chaine ne se lancait pas. On l utilise quand il existe.
         val uaM3u = try { Api.m3uUserAgents[url] } catch (e: Throwable) { null }
-        val streamUaFinal = if (!uaM3u.isNullOrBlank()) uaM3u else streamUa
+        val replayUa = if (isReplayMode) intent.getStringExtra("forceUa") else null
+        val streamUaFinal = if (!replayUa.isNullOrBlank()) replayUa
+            else if (!uaM3u.isNullOrBlank()) uaM3u else streamUa
         val httpFactory = KzHttpDataSource.factory(
             this,
             userAgent = streamUaFinal,
@@ -381,6 +404,16 @@ class PlayerActivity : AppCompatActivity() {
             .setExtensionRendererMode(
                 androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             )
+
+        // V117 : un seul essai logiciel, uniquement apres une erreur codec replay.
+        // Pas de preference persistante et aucun changement pour le direct.
+        if (isReplayMode && intent.getBooleanExtra("replaySoftwareRetry", false)) {
+            renderersFactory.setMediaCodecSelector { mime, secure, tunneled ->
+                androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+                    .getDecoderInfos(mime, secure, tunneled)
+                    .sortedBy { if (ReplayUrls.isSoftwareDecoder(it.name)) 0 else 1 }
+            }
+        }
 
         val playerBuilder = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
@@ -465,13 +498,19 @@ class PlayerActivity : AppCompatActivity() {
             // On joue donc EXACTEMENT l'URL donnee par le portail, sans jamais changer
             // l'extension. Avant, l'appli essayait .ts / .mp4 / .avi a la place du .mkv
             // fourni : le serveur repondait 405 et le film ne partait pas.
+            isReplayMode && plCur?.type != "stalker" -> {
+                val supplied = intent.getStringArrayListExtra("replayCandidates")
+                    ?.filter { ReplayUrls.isArchiveUrl(it) }.orEmpty()
+                if (supplied.isNotEmpty()) supplied else listOf(url)
+            }
             plCur?.type == "stalker" -> listOf(url)
             // VOD/episodes (Xtream, M3U) : on garde l'URL propre, mais si le portail renvoie
             // du .avi non decodable par Android, on tente les containers alternatifs.
             isVod -> buildVodCandidates(url)
             else -> buildCandidates(url)
         }
-        candIdx = 0
+        candIdx = if (isReplayMode) intent.getIntExtra("replayCandidateIndex", 0)
+            .coerceIn(0, candidates.lastIndex.coerceAtLeast(0)) else 0
         p.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
                 // Film/serie sans son : il y a des pistes audio mais aucune n'est selectionnee.
@@ -505,6 +544,7 @@ class PlayerActivity : AppCompatActivity() {
                 if (playbackState == Player.STATE_READY && p.videoSize.width > 0) {
                     demarrageOk = true
                     recoveryHandler.removeCallbacks(startupWatchdog)
+                    recoveryHandler.removeCallbacks(replayStartupWatchdog)
                 }
                 if (playbackState == Player.STATE_READY && isLiveMode) {
                     // Direct reparti : on memorise la variante qui marche et on remet le compteur
@@ -521,6 +561,39 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (isReplayMode) {
+                    recoveryHandler.removeCallbacks(replayStartupWatchdog)
+                    recoveryHandler.removeCallbacks(startupWatchdog)
+                    val replayUrl = candidates.getOrNull(candIdx).orEmpty()
+                    if (error.errorCodeName == "ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED" &&
+                        intent.getStringExtra("replayHlsRetryUrl") != replayUrl) {
+                        // Endpoint PHP/sans extension : certains renvoient du HLS.
+                        intent.putExtra("replayHlsRetryUrl", replayUrl)
+                        playCurrent()
+                        return
+                    }
+                    if (ReplayUrls.isDecodeFailure(error.errorCodeName) &&
+                        !intent.getBooleanExtra("replaySoftwareRetry", false)) {
+                        intent.putExtra("replaySoftwareRetry", true)
+                        intent.putExtra("replayCandidateIndex", candIdx)
+                        intent.putExtra("replayResumeMs", p.currentPosition.coerceAtLeast(0L))
+                        recreate()
+                        return
+                    }
+                    if (candIdx < candidates.size - 1) {
+                        candIdx++
+                        intent.putExtra("replayCandidateIndex", candIdx)
+                        playCurrent()
+                        return
+                    }
+                    val u = ReplayUrls.safeDiagnosticUrl(candidates.getOrNull(candIdx).orEmpty())
+                    androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
+                        .setTitle("Replay impossible : " + error.errorCodeName)
+                        .setMessage("Aucune variante d'archive n'a pu etre lue.\n" + u)
+                        .setPositiveButton("OK") { d, _ -> d.dismiss() }
+                        .show()
+                    return
+                }
                 if (candIdx < candidates.size - 1) {
                     candIdx++
                     playCurrent()
@@ -581,7 +654,7 @@ class PlayerActivity : AppCompatActivity() {
         lastProgressTs = SystemClock.elapsedRealtime()
         if (isLiveMode) recoveryHandler.postDelayed(stallWatchdog, 2000)
         // v389 : surveillance du demarrage (rond de chargement sans fin).
-        recoveryHandler.postDelayed(startupWatchdog, 9000)
+        if (!isReplayMode) recoveryHandler.postDelayed(startupWatchdog, 9000)
         // v413 : aucun watchdog video ne relance ou ne change le flux.
     }
 
@@ -593,9 +666,17 @@ class PlayerActivity : AppCompatActivity() {
         // On laisse ExoPlayer auto-detecter le format (extension + Content-Type + redirections).
         // Forcer le MIME pouvait casser un .ts qui redirige en realite vers du HLS.
         p.setMediaItem(buildMediaItem(u))
+        if (isReplayMode) {
+            val resume = intent.getLongExtra("replayResumeMs", 0L)
+            if (resume > 0L) p.seekTo(resume)
+        }
         p.playWhenReady = true
         p.prepare()
         p.play()
+        if (isReplayMode) {
+            recoveryHandler.removeCallbacks(replayStartupWatchdog)
+            recoveryHandler.postDelayed(replayStartupWatchdog, 12000)
+        }
     }
 
     // Lecture a la suite : a la fin d'un episode, on enchaine automatiquement sur le suivant
@@ -702,6 +783,14 @@ class PlayerActivity : AppCompatActivity() {
     // Construit le MediaItem en y greffant, si demande, une piste de sous-titres externe.
     private fun buildMediaItem(u: String): MediaItem {
         val b = MediaItem.Builder().setUri(Uri.parse(u))
+        if (isReplayMode) {
+            val mime = when {
+                intent.getStringExtra("replayHlsRetryUrl") == u -> "application/x-mpegURL"
+                u == watchUrl -> intent.getStringExtra("mime").orEmpty()
+                else -> ""
+            }
+            if (mime.isNotBlank()) b.setMimeType(mime)
+        }
         val sub = currentSubUrl
         if (!sub.isNullOrBlank()) {
             val mime = when (currentSubFormat.lowercase()) {

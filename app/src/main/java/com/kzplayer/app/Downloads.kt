@@ -309,7 +309,7 @@ object Downloads {
             if (dm == null) return "T\u00e9l\u00e9chargement indisponible sur cet appareil."
             val name = safeName(title, url)
             val req = DownloadManager.Request(Uri.parse(url))
-            req.addRequestHeader("User-Agent", Config.USER_AGENT)
+            req.addRequestHeader("User-Agent", if (ReplayUrls.isArchiveUrl(url)) "IPTVSmartersPro" else Config.USER_AGENT)
             req.setTitle(if (title.isBlank()) name else title)
             req.setDescription("KZ Player")
             // v372 : correction du blocage "En attente de connexion".

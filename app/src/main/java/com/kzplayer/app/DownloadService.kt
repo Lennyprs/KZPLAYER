@@ -143,7 +143,9 @@ class DownloadService : Service() {
             p.done = deja
             try {
                 val rb = Request.Builder().url(p.url)
-                    .header("User-Agent", Config.USER_AGENT)
+                    .header("User-Agent", if (ReplayUrls.isArchiveUrl(p.url)) {
+                        if (p.replayUaFallback) "VLC/3.0.20 LibVLC/3.0.20" else "IPTVSmartersPro"
+                    } else Config.USER_AGENT)
                     .header("Accept", "*/*")
                 if (deja > 0L) rb.header("Range", "bytes=" + deja + "-")
                 val rep = client.newCall(rb.build()).execute()
@@ -163,6 +165,16 @@ class DownloadService : Service() {
                         try { f.delete() } catch (_: Throwable) {}
                         continue
                     }
+                    // V117 : le replay essaie une seconde signature HTTP avant d'abandonner.
+                    if (ReplayUrls.isArchiveUrl(p.url) && !p.replayUaFallback) {
+                        p.replayUaFallback = true
+                        p.urlIndex = 0
+                        p.url = p.urls.first()
+                        p.done = 0L
+                        p.total = 0L
+                        try { f.delete() } catch (_: Throwable) {}
+                        continue
+                    }
                     // Jeton expire cote serveur : on refabrique un lien tout neuf.
                     if (!rafraichirLien(p)) {
                         p.status = ST_FAILED
@@ -172,9 +184,20 @@ class DownloadService : Service() {
                     }
                     continue
                 }
+                if (ReplayUrls.isArchiveUrl(p.url) && rep.request.url.encodedPath.contains("/live/")) {
+                    rep.close()
+                    p.lastError = "Le serveur a redirige l'archive vers le direct."
+                    if (p.nextUrl()) {
+                        try { f.delete() } catch (_: Throwable) {}
+                        continue
+                    }
+                    p.status = ST_FAILED
+                    finirSiPlusRien()
+                    return
+                }
                 erreursConsecutives = 0
                 val contentType = (rep.header("Content-Type") ?: "").lowercase()
-                if (contentType.contains("text/html") || contentType.contains("json") || contentType.contains("xml")) {
+                if (contentType.contains("text/html") || contentType.contains("json") || contentType.contains("xml") || contentType.contains("mpegurl")) {
                     p.lastError = "Reponse non video : " + contentType
                     rep.close()
                     if (p.nextUrl()) {
@@ -289,7 +312,8 @@ class DownloadService : Service() {
             @Volatile var cmd: String,
             @Volatile var urls: List<String> = listOf(url),
             @Volatile var urlIndex: Int = 0,
-            @Volatile var lastError: String = ""
+            @Volatile var lastError: String = "",
+            @Volatile var replayUaFallback: Boolean = false
         ) {
             @Synchronized fun nextUrl(): Boolean {
                 val next = urlIndex + 1

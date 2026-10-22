@@ -121,6 +121,10 @@ class ReplayProgramsActivity : BaseActivity() {
                 .putExtra("logo", chLogo)
                 .putExtra("historyKind", "live")
                 .putExtra("mode", "vod")
+                .putExtra("replay", true)
+                .putExtra("mime", ReplayApi.lastArchiveMime)
+                .putStringArrayListExtra("replayCandidates", ArrayList(ReplayApi.lastArchiveCandidates))
+                .putExtra("forceUa", ReplayApi.lastArchiveUserAgent)
         )
     }
 

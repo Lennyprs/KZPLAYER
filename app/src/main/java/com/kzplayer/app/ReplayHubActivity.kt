@@ -44,6 +44,7 @@ class ReplayHubActivity : BaseActivity() {
     private var selCh: Item? = null
     private var dayOffset = 0
     private val dayCount = 8
+    private var openingArchive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -226,12 +227,15 @@ class ReplayHubActivity : BaseActivity() {
                 "Veuillez l'utiliser via un Xtream ou un M3U"
             return
         }
+        if (openingArchive) return
+        openingArchive = true
         progress.visibility = View.VISIBLE
         msgTv.text = "Recherche de l archive..."
         lifecycleScope.launch {
             val url = try {
                 ReplayApi.archiveUrl(pl, ch.streamId ?: "", ch.cmd ?: "", p)
             } catch (e: Exception) { "" }
+            openingArchive = false
             progress.visibility = View.GONE
             if (url.isBlank()) {
                 msgTv.text = "Archive introuvable pour ce programme sur ce serveur. " +
@@ -251,7 +255,9 @@ class ReplayHubActivity : BaseActivity() {
                     .putExtra("historyKind", "live")
                     .putExtra("mode", "vod")
                     .putExtra("mime", ReplayApi.lastArchiveMime)
-                    .putExtra("forceUa", "IPTVSmartersPro")
+                    .putExtra("replay", true)
+                    .putStringArrayListExtra("replayCandidates", ArrayList(ReplayApi.lastArchiveCandidates))
+                    .putExtra("forceUa", ReplayApi.lastArchiveUserAgent)
             )
         }
     }
