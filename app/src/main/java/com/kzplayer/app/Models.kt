@@ -43,8 +43,7 @@ data class Item(
     val summary: String = "",       // resume propre a l'episode / film quand fourni
     val catchup: Boolean = false,   // chaine disponible en replay / catch-up
     val serverLabel: String = "",   // recherche multi-serveurs : "Serveur 1 / Serveur 2"
-    val ownerPlaylistId: String = "", // serveur d'origine
-    val replayConfig: ReplayCatchup.Config? = null
+    val ownerPlaylistId: String = "" // serveur d'origine de l'item (pour basculer dessus)
 ) : java.io.Serializable
 
 data class VodMeta(val plot: String, val duration: String)

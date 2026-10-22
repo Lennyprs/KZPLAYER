@@ -1,0 +1,56 @@
+KZ PLAYER - RETOUR 3.5.6 SANS DESINSTALLATION - V122
+
+IMPORTANT : ce ZIP contient les SOURCES, pas un APK compile.
+Il remet le code Android de la V120 / 3.5.6, apres installation de la 3.5.7.
+Ne desinstalle pas l'application et n'efface pas ses donnees.
+
+1. Extraire ce ZIP puis copier son contenu A LA RACINE du depot local KZPLAYER,
+   en remplacant les fichiers existants. Ne pas creer de sous-dossier contenant
+   un deuxieme projet. Le dossier app et le dossier .github doivent etre copies.
+   Remplacer aussi les quatre fichiers ReplayCatchup.java, ReplayXmltv.java,
+   ReplayStalker.java et ReplaySources.kt : ils sont volontairement neutralises.
+   Cela annule les ajouts V121 sans devoir supprimer manuellement leurs fichiers.
+   Les anciens guides V121 eventuellement presents sont historiques, pas actifs.
+
+2. Depuis le terminal ouvert dans ce depot, executer ces TROIS lignes :
+
+git add app/build.gradle app/src/main/java/com/kzplayer/app .github/workflows/build-apk-signed.yml tools/release/next_official_version.py A-LIRE-RETOUR-3.5.6-V122.txt
+git commit -m "Retablit la 3.5.6 en mise a jour sans desinstallation - V122"
+git push
+
+3. Sur GitHub / Lennyprs / KZPLAYER / Actions, attendre la NOUVELLE execution
+   de Build KZ Player APK (signed), declenchee par ce push. Ne pas relancer
+   une ancienne execution 3.5.7. Si elle echoue, ne rien desinstaller : transmettre
+   le message d'erreur. Aucune installation n'a lieu tant que tu ne l'acceptes pas.
+
+4. Une fois la nouvelle compilation verte, ouvrir sa nouvelle release GitHub
+   affichant KZ Player 3.5.6 et telecharger app-release-signed.apk.
+   Le copier sur la TV si necessaire, puis l'ouvrir et choisir Mettre a jour.
+   Il doit s'installer PAR-DESSUS la 3.5.7. Si Android demande une desinstallation,
+   annuler et transmettre le message : ne pas supprimer les donnees.
+
+POURQUOI ANDROID ACCEPTE CETTE 3.5.6 :
+- versionName affiche 3.5.6, mais le numero interne versionCode avance.
+- La compilation prend au minimum GITHUB_RUN_NUMBER + 400.
+- Elle verifie aussi le tag vN de la derniere release officielle publiee et prend
+  au minimum N + 1. Les tags personnalises brand-* ne sont jamais utilises.
+- Si cette verification echoue (hors absence de release / HTTP 404), ou si le
+  format du tag est inattendu, elle s'arrete plutot que produire un numero douteux.
+- L'application conserve com.kzplayer.app et la meme configuration de signature,
+  avec les secrets de signature GitHub existants, sans les changer ni les exposer.
+- Une mise a jour acceptee par Android conserve normalement les donnees locales.
+  Ce retour concerne l'APK principal, pas un APK personnalise d'un autre package.
+
+PERIMETRE :
+- Tous les fichiers Android actifs reprennent la V120 / 3.5.6 sans changement.
+- Quatre fichiers ajoutes par la V121 sont remplaces par des fichiers sans code.
+- Seule la generation du numero officiel dans le workflow est renforcee.
+- Aucun changement du backend Google, des panels Cloudflare, des cles de signature,
+  du serveur de licences, des mots de passe ou des playlists distantes.
+- Ce retour annule les ajouts replay de la 3.5.7. Il ne promet pas de corriger
+  les erreurs fournisseur qui existaient deja dans la 3.5.6.
+
+VALIDATION :
+La compilation Android signee doit etre faite par GitHub Actions.
+Les controles locaux et tests Java ne remplacent pas cette compilation,
+ni une verification sur ta TV. Aucun APK signe n'est fourni dans ce ZIP.

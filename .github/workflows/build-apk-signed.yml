@@ -19,9 +19,11 @@ jobs:
       # v392 : GitHub Actions ne supporte pas l arithmetique dans les expressions
       # ${{ ... }}. On calcule VERSION_CODE = run_number + 400 dans un step shell
       # et on l expose via $GITHUB_ENV pour les steps suivants (build + release).
-      - name: Calculer la version (run_number + 400)
+      - name: Calculer une version Android superieure a la derniere release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VC=$((GITHUB_RUN_NUMBER + 400))
+          VC=$(python3 tools/release/next_official_version.py)
           VN=$(sed -n 's/.*versionName "\([0-9.]*\)".*/\1/p' app/build.gradle | head -n1)
           test -n "$VN"
           echo "VERSION_CODE=$VC" >> $GITHUB_ENV

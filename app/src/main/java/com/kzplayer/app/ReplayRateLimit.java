@@ -23,17 +23,6 @@ public final class ReplayRateLimit {
         public final long remainingMs;
         public Limited(long remainingMs) {super("REPLAY_HTTP_429_ATTENTE");this.remainingMs=remainingMs;}
     }
-    public static final class HttpFailure extends IOException {
-        public final int responseCode;
-        public HttpFailure(int code) { super("HTTP_"+code); responseCode=code; }
-    }
-    public static synchronized void recordStatus(String url,int status,Map<String,List<String>> headers) {
-        if(status!=429)return;
-        String key=host(url);if(key.isEmpty())return;
-        long next=System.currentTimeMillis()+retryDelayMs(headers,System.currentTimeMillis());
-        Long old=deadlines.get(key);long until=old==null?next:Math.max(old,next);deadlines.put(key,until);
-        Store s=store;if(s!=null)try{s.write(key,Math.max(s.read(key),until));}catch(RuntimeException ignored){}
-    }
     private static String host(String url) {
         try {String h=URI.create(url).getHost();return h==null?"":h.toLowerCase(Locale.US);}catch(Exception e){return "";}
     }

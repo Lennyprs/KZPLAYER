@@ -33,43 +33,12 @@ public final class ReplayUrls {
             String tail = query + "&start=" + enc(start) + "&duration=" + Math.max(1, minutes);
             urls.add(root + "/streaming/timeshift.php" + tail);
             urls.add(root + "/timeshift.php" + tail);
-            urls.add(root + "/streaming/timeshift.php" + tail + "&extension=ts");
-            if (hls) {
-                urls.add(root + "/streaming/timeshift.php" + tail + "&extension=m3u8");
-                urls.add(root + "/streaming/timeshift.php" + tail + "&type=m3u8");
-            }
+            if (hls) urls.add(root + "/streaming/timeshift.php" + tail + "&type=m3u8");
         }
         urls.add(prefix);
         if (startSeconds > 0L) urls.add(epochPrefix);
         return new ArrayList<>(urls);
     }
-    public static String mimeHint(String url) {
-        return url!=null&&java.util.regex.Pattern.compile("(?i)[?&](?:extension|type|output)=m3u8(?:&|$)").matcher(url).find()?"application/x-mpegURL":"";
-    }
-    public static int responseStatus(Throwable error) {
-        for(int i=0;error!=null&&i<12;i++,error=error.getCause()){
-            if(error instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)
-                return ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)error).responseCode;
-            if(error.getCause()==error)break;
-        }return 0;
-    }
-    public static boolean shouldAlternateError(Throwable error,boolean locked,boolean tried) {
-        if(locked||tried)return false;
-        if(tryAlternateForStatus(responseStatus(error),false,false))return true;
-        for(int i=0;error!=null&&i<12;i++,error=error.getCause()){
-            if(error instanceof ReplayDataSource.RejectedArchive && "REPONSE_NON_VIDEO".equals(((ReplayDataSource.RejectedArchive)error).reason))return true;
-            if(error.getCause()==error)break;
-        }return false;
-    }
-    public static boolean noAutomaticRetryError(Throwable error) {
-        if(noAutomaticRetryStatus(responseStatus(error)))return true;
-        for(int i=0;error!=null&&i<12;i++,error=error.getCause()){
-            if(error instanceof ReplayDataSource.RejectedArchive)return true;
-            if(error.getCause()==error)break;
-        }return false;
-    }
-    public static boolean noAutomaticRetryStatus(int status) {return status>=400&&status<500&&status!=408;}
-    public static boolean tryAlternateForStatus(int status,boolean locked,boolean tried) {return !locked&&!tried&&(status==401||status==403);}
     public static String alternateUserAgent(String current) {
         return current != null && current.startsWith("VLC")
             ? "IPTVSmartersPro" : "VLC/3.0.20 LibVLC/3.0.20";
