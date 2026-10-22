@@ -865,6 +865,7 @@ class BrowseActivity : BaseActivity() {
         if (kind == "replay" && (item.kind == "live" || item.kind == "channel")) {
             startActivity(
                 Intent(this, ReplayProgramsActivity::class.java)
+                    .putExtra("replayChannel", item)
                     .putExtra("title", item.name)
                     .putExtra("logo", item.logo)
                     .putExtra("streamId", item.streamId ?: "")

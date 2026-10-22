@@ -78,8 +78,8 @@ class PlayerActivity : AppCompatActivity() {
             showReplayRateLimit()
             return true
         }
-        if (!isReplayMode || Session.current?.type == "stalker" ||
-            intent.getBooleanExtra("replayUaRetry", false)) return false
+        if (!isReplayMode || intent.getBooleanExtra("replayUaLocked", false) || Session.current?.type == "stalker" ||
+            intent.getBooleanExtra("replayPerCandidateUa", false) || intent.getBooleanExtra("replayUaRetry", false)) return false
         intent.putExtra("replayUaRetry", true)
         intent.putExtra("forceUa", ReplayUrls.alternateUserAgent(intent.getStringExtra("forceUa")))
         intent.putExtra("replayCandidateIndex", 0)
@@ -350,6 +350,7 @@ class PlayerActivity : AppCompatActivity() {
                 return
             }
         }
+        if (isReplayMode && Session.current?.type == "xtream") intent.putExtra("replayPerCandidateUa", true)
         watchTitle = title
         watchLogo = intent.getStringExtra("logo") ?: ""
         watchKind = intent.getStringExtra("historyKind") ?: "live"
@@ -443,7 +444,9 @@ class PlayerActivity : AppCompatActivity() {
         val replayUa = if (isReplayMode) intent.getStringExtra("forceUa") else null
         val streamUaFinal = if (!replayUa.isNullOrBlank()) replayUa
             else if (!uaM3u.isNullOrBlank()) uaM3u else streamUa
-        val httpFactory = KzHttpDataSource.factory(
+        val httpFactory = if (isReplayMode && plCur?.type == "stalker") {
+            ReplaySources.stalkerFactory(this, plCur, streamUaFinal)
+        } else KzHttpDataSource.factory(
             this,
             userAgent = streamUaFinal,
             allowCrossProtocolRedirects = true,
@@ -458,7 +461,7 @@ class PlayerActivity : AppCompatActivity() {
                 override fun getRetryDelayMsFor(
                     loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo
                 ): Long {
-                    return if (ReplayRateLimit.isLimited(loadErrorInfo.exception)) {
+                    return if (ReplayRateLimit.isLimited(loadErrorInfo.exception) || ReplayUrls.noAutomaticRetryError(loadErrorInfo.exception)) {
                         androidx.media3.common.C.TIME_UNSET
                     } else super.getRetryDelayMsFor(loadErrorInfo)
                 }
@@ -478,12 +481,13 @@ class PlayerActivity : AppCompatActivity() {
             } else httpFactory
         // V119 : un seul GET d'archive, controle puis lu sur la meme connexion.
         val checkedSourceFactory: androidx.media3.datasource.DataSource.Factory =
-            if (isReplayMode && plCur?.type != "stalker" && localScheme != "file" && localScheme != "content") {
+            if (isReplayMode && localScheme != "file" && localScheme != "content") {
                 ReplayDataSource.Factory(
                     sourceFactory,
                     listOf(url) + intent.getStringArrayListExtra("replayCandidates").orEmpty(),
                     intent.getLongExtra("replayStartMs", 0L),
-                    intent.getLongExtra("replayEndMs", 0L)
+                    intent.getLongExtra("replayEndMs", 0L),
+                    intent.getBooleanExtra("replayDeclaredCatchup", false)
                 )
             } else sourceFactory
         val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(checkedSourceFactory)
@@ -666,6 +670,14 @@ class PlayerActivity : AppCompatActivity() {
                     }
                     recoveryHandler.removeCallbacks(replayStartupWatchdog)
                     recoveryHandler.removeCallbacks(startupWatchdog)
+                    if (intent.getBooleanExtra("replayPerCandidateUa", false) &&
+                        ReplayUrls.shouldAlternateError(error, intent.getBooleanExtra("replayUaLocked", false), intent.getBooleanExtra("replayUaTried_$candIdx", false))) {
+                        intent.putExtra("replayUaTried_$candIdx", true)
+                        intent.putExtra("forceUa", ReplayUrls.alternateUserAgent(intent.getStringExtra("forceUa")))
+                        intent.putExtra("replayCandidateIndex", candIdx)
+                        recreate()
+                        return
+                    }
                     val replayUrl = candidates.getOrNull(candIdx).orEmpty()
                     if (error.errorCodeName == "ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED" &&
                         intent.getStringExtra("replayHlsRetryUrl") != replayUrl) {
@@ -689,7 +701,7 @@ class PlayerActivity : AppCompatActivity() {
                         return
                     }
                     if (retryReplayUserAgent()) return
-                    val u = ReplayUrls.safeDiagnosticUrl(candidates.getOrNull(candIdx).orEmpty())
+                    val u = if (intent.getBooleanExtra("replayDeclaredCatchup", false)) "URL archive masquee" else ReplayUrls.safeDiagnosticUrl(candidates.getOrNull(candIdx).orEmpty())
                     androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
                         .setTitle("Replay impossible : " + replayDetail)
                         .setMessage("Aucune variante d'archive n'a pu etre lue.\n" + replayTrace + "\n\n" + u)
@@ -894,6 +906,7 @@ class PlayerActivity : AppCompatActivity() {
         if (isReplayMode) {
             val mime = when {
                 intent.getStringExtra("replayHlsRetryUrl") == u -> "application/x-mpegURL"
+                ReplayUrls.mimeHint(u).isNotBlank() -> ReplayUrls.mimeHint(u)
                 u == watchUrl -> intent.getStringExtra("mime").orEmpty()
                 else -> ""
             }

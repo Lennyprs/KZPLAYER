@@ -45,6 +45,8 @@ class ReplayHubActivity : BaseActivity() {
     private var dayOffset = 0
     private val dayCount = 8
     private var openingArchive = false
+    private var programsJob: kotlinx.coroutines.Job? = null
+    private var programsGeneration = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +69,7 @@ class ReplayHubActivity : BaseActivity() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
+        ReplaySources.installQuota(this)
         loadCategories()
     }
 
@@ -77,6 +80,8 @@ class ReplayHubActivity : BaseActivity() {
     }
 
     private fun backToCategories() {
+        programsJob?.cancel()
+        programsGeneration++
         selCat = null
         selCh = null
         channels = emptyList()
@@ -123,24 +128,8 @@ class ReplayHubActivity : BaseActivity() {
     private fun loadCategories() {
         val pl = Session.current
         if (pl == null) { msgTv.text = "Aucun serveur actif."; return }
-        // v367 : les portails Stalker/MAG ne donnent pas d archive exploitable.
-        if (pl.type == "stalker") {
-            cats = emptyList()
-            channels = emptyList()
-            shown = emptyList()
-            progs = emptyList()
-            chRv.adapter?.notifyDataSetChanged()
-            progRv.adapter?.notifyDataSetChanged()
-            leftTitle.text = "Replay"
-            progress.visibility = View.GONE
-            searchEt.visibility = View.GONE
-            msgTv.text = "Le Replay est indisponible sur ce type de code. " +
-                "Veuillez l'utiliser via un Xtream ou un M3U"
-            return
-        }
-        if (pl.type != "xtream") {
-            msgTv.text = "Le Replay est indisponible sur ce type de code. " +
-                "Veuillez l'utiliser via un Xtream ou un M3U"
+        if (pl.type !in listOf("xtream", "stalker", "m3u")) {
+            msgTv.text = "Type de source replay non pris en charge."
             return
         }
         leftTitle.text = "Cat\u00e9gories"
@@ -149,10 +138,11 @@ class ReplayHubActivity : BaseActivity() {
         lifecycleScope.launch {
             val base = try {
                 if (pl.type == "stalker") Api.stalkerCategories(pl, "live")
+                else if (pl.type == "m3u") Api.m3uCategories(pl, "live")
                 else Api.xtreamCategories(pl, "live")
             } catch (e: Exception) { emptyList<Category>() }
             CategorySync.report(this@ReplayHubActivity, pl, "live", base)
-            cats = base.filter { !it.id.startsWith("__") }
+            cats = if (pl.type == "m3u") base else base.filter { !it.id.startsWith("__") }
             progress.visibility = View.GONE
             chRv.adapter?.notifyDataSetChanged()
             msgTv.text = if (cats.isEmpty()) "Aucune cat\u00e9gorie sur ce serveur."
@@ -162,6 +152,8 @@ class ReplayHubActivity : BaseActivity() {
 
     // Etape 2 : les chaines de la categorie, au meme endroit que les categories.
     private fun openCategory(cat: Category) {
+        programsJob?.cancel()
+        programsGeneration++
         val pl = Session.current ?: return
         selCat = cat
         selCh = null
@@ -176,6 +168,7 @@ class ReplayHubActivity : BaseActivity() {
         lifecycleScope.launch {
             val items = try {
                 if (pl.type == "stalker") Api.stalkerItems(pl, "live", cat.id)
+                else if (pl.type == "m3u") Api.m3uItems(pl, "live", cat.id)
                 else Api.xtreamItems(pl, "live", cat.id)
             } catch (e: Exception) { emptyList<Item>() }
             val withCatchup = items.filter { it.catchup }
@@ -201,20 +194,30 @@ class ReplayHubActivity : BaseActivity() {
     }
 
     // Programmes du jour choisi. Si le serveur ne donne pas de guide pour ce jour,
-    // on propose des tranches de 30 minutes (ca marche sur tous les serveurs).
+    // on propose des tranches de 30 minutes uniquement lorsque le protocole accepte des tranches sans identifiant EPG.
     private fun loadProgs() {
+        programsJob?.cancel()
+        val generation = ++programsGeneration
+        val requestedDay = dayOffset
         val pl = Session.current ?: return
         val ch = selCh ?: return
         progs = emptyList()
         progRv.adapter?.notifyDataSetChanged()
         progress.visibility = View.VISIBLE
-        lifecycleScope.launch {
-            val all = try { ReplayApi.programs(pl, ch.streamId ?: "") } catch (e: Exception) { emptyList() }
-            val ofDay = ReplayApi.filterDay(all, dayOffset)
-            progs = if (ofDay.isNotEmpty()) ofDay else ReplayApi.slotsForDay(dayOffset)
+        programsJob = lifecycleScope.launch {
+            val all = try { ReplayApi.programs(pl, ch, requestedDay) } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                progress.visibility = View.GONE
+                msgTv.text = ReplaySources.failureMessage(e)
+                return@launch
+            }
+            if (generation != programsGeneration || selCh !== ch || Session.current?.id != pl.id) return@launch
+            val ofDay = ReplayApi.filterDay(all, requestedDay)
+            progs = if (ofDay.isNotEmpty()) ofDay else if (ReplaySources.allowSlots(pl, ch)) ReplayApi.slotsForDay(requestedDay).filter { ReplaySources.availableSlot(pl, ch, it) } else emptyList()
             progress.visibility = View.GONE
-            msgTv.text = ch.name + "   -   " + ReplayApi.dayLabel(dayOffset) +
+            msgTv.text = ch.name + "   -   " + ReplayApi.dayLabel(requestedDay) +
                 (if (ofDay.isEmpty()) "   (guide indisponible : tranches horaires)" else "")
+            if (progs.isEmpty()) msgTv.text = "Aucune archive exploitable pour ce jour : guide, droits ou fenetre de conservation indisponibles."
             progRv.adapter?.notifyDataSetChanged()
         }
     }
@@ -222,28 +225,31 @@ class ReplayHubActivity : BaseActivity() {
     private fun playProg(p: ReplayApi.Prog) {
         val pl = Session.current ?: return
         val ch = selCh ?: return
-        if (pl.type == "stalker") {
-            msgTv.text = "Le Replay est indisponible sur ce type de code. " +
-                "Veuillez l'utiliser via un Xtream ou un M3U"
-            return
-        }
         if (openingArchive) return
+        val generation = programsGeneration
         openingArchive = true
         progress.visibility = View.VISIBLE
         msgTv.text = "Recherche de l archive..."
         lifecycleScope.launch {
-            val url = try {
-                ReplayApi.archiveUrl(pl, ch.streamId ?: "", ch.cmd ?: "", p)
-            } catch (e: Exception) { "" }
+            val archive = try {
+                ReplayApi.resolve(pl, ch, p)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                openingArchive = false
+                progress.visibility = View.GONE
+                msgTv.text = ReplaySources.failureMessage(e)
+                return@launch
+            }
+            val url = archive.url
             openingArchive = false
             progress.visibility = View.GONE
+            if (generation != programsGeneration || selCh !== ch || Session.current?.id != pl.id) return@launch
             if (url.isBlank()) {
                 msgTv.text = "Archive introuvable pour ce programme sur ce serveur. " +
                     "Essaie un autre horaire ou une autre chaine."
                 if (AdminMode.diagEnabled(this@ReplayHubActivity)) {
                     msgTv.text = "Archive indisponible." + System.lineSeparator() +
-                        ReplayApi.lastArchiveLog + System.lineSeparator() +
-                        Api.lastArchiveStalkerLog
+                        archive.diagnostic
                 }
                 return@launch
             }
@@ -254,12 +260,14 @@ class ReplayHubActivity : BaseActivity() {
                     .putExtra("logo", ch.logo)
                     .putExtra("historyKind", "live")
                     .putExtra("mode", "vod")
-                    .putExtra("mime", ReplayApi.lastArchiveMime)
+                    .putExtra("mime", archive.mime)
                     .putExtra("replay", true)
+                    .putExtra("replayDeclaredCatchup", pl.type != "xtream")
+                    .putExtra("replayUaLocked", pl.type != "xtream")
                     .putExtra("replayStartMs", p.startMs)
                     .putExtra("replayEndMs", p.endMs)
-                    .putStringArrayListExtra("replayCandidates", ArrayList(ReplayApi.lastArchiveCandidates))
-                    .putExtra("forceUa", ReplayApi.lastArchiveUserAgent)
+                    .putStringArrayListExtra("replayCandidates", ArrayList(archive.candidates))
+                    .putExtra("forceUa", archive.userAgent)
             )
         }
     }

@@ -23,22 +23,28 @@ public final class ReplayDataSource implements DataSource {
         private final DataSource.Factory upstream;
         private final Set<String> roots;
         private final long startMs, endMs;
+        private final boolean declaredCatchup;
         public Factory(DataSource.Factory upstream, List<String> roots, long startMs, long endMs) {
+            this(upstream, roots, startMs, endMs, false);
+        }
+        public Factory(DataSource.Factory upstream, List<String> roots, long startMs, long endMs, boolean declaredCatchup) {
+            this.declaredCatchup=declaredCatchup;
             this.upstream=upstream; this.roots=new HashSet<>(roots);
             this.startMs=startMs; this.endMs=endMs;
         }
         @Override public DataSource createDataSource() {
-            return new ReplayDataSource(upstream.createDataSource(),roots,startMs,endMs);
+            return new ReplayDataSource(upstream.createDataSource(),roots,startMs,endMs,declaredCatchup);
         }
     }
     private final DataSource upstream;
     private final Set<String> roots;
     private final long startMs, endMs;
+    private final boolean declaredCatchup;
     private byte[] prefix=new byte[0];
     private int prefixOffset=0;
     private boolean opened=false;
-    private ReplayDataSource(DataSource upstream,Set<String> roots,long startMs,long endMs) {
-        this.upstream=upstream;this.roots=roots;this.startMs=startMs;this.endMs=endMs;
+    private ReplayDataSource(DataSource upstream,Set<String> roots,long startMs,long endMs,boolean declaredCatchup) {
+        this.upstream=upstream;this.roots=roots;this.startMs=startMs;this.endMs=endMs;this.declaredCatchup=declaredCatchup;
     }
     @Override public void addTransferListener(TransferListener listener) {
         upstream.addTransferListener(listener);
@@ -54,7 +60,7 @@ public final class ReplayDataSource implements DataSource {
             if (!roots.contains(spec.uri.toString())) return length;
             Uri actual=upstream.getUri();
             String path=actual==null?"":actual.getEncodedPath();
-            if (path!=null && path.toLowerCase(Locale.US).contains("/live/"))
+            if (!declaredCatchup && path!=null && path.toLowerCase(Locale.US).contains("/live/"))
                 throw new RejectedArchive("REDIRECTION_VERS_DIRECT");
             String type="";
             for (Map.Entry<String,List<String>> h:upstream.getResponseHeaders().entrySet())

@@ -27,7 +27,8 @@ object ReplayApi {
         val time: String,
         val desc: String,
         val startMs: Long,
-        val endMs: Long
+        val endMs: Long,
+        val replayId: String = ""
     )
 
     private fun enc(s: String): String = try { URLEncoder.encode(s, "UTF-8") } catch (e: Exception) { s }
@@ -64,9 +65,17 @@ object ReplayApi {
             "&password=" + enc(pl.password) + "&action=get_simple_data_table&stream_id=" + enc(streamId)
         val txt = try {
             Api.imageClient().newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (r.code == 429) {
+                    ReplayRateLimit.recordStatus(pl.serverUrl, 429, r.headers.toMultimap())
+                    throw ReplayRateLimit.Limited(ReplayRateLimit.remainingMs(pl.serverUrl))
+                }
+                if (!r.isSuccessful) throw ReplayRateLimit.HttpFailure(r.code)
                 r.body?.string() ?: ""
             }
-        } catch (e: Exception) { "" }
+        } catch (e: Exception) {
+            if (e is ReplayRateLimit.Limited || e is ReplayRateLimit.HttpFailure || e is kotlinx.coroutines.CancellationException) throw e
+            ""
+        }
         if (txt.isBlank()) return@withContext emptyList()
         val arr: JSONArray = try {
             val o = JSONObject(txt)
@@ -197,6 +206,49 @@ object ReplayApi {
     var lastArchiveCandidates: ArrayList<String> = arrayListOf()
     var lastArchiveUserAgent: String = "IPTVSmartersPro"
 
+    data class Archive(val url: String, val mime: String, val userAgent: String, val candidates: List<String>, val diagnostic: String)
+    private val resolutionMutex = kotlinx.coroutines.sync.Mutex()
+    suspend fun resolve(pl: Playlist, channel: Item, program: Prog): Archive {
+        resolutionMutex.lock()
+        try {
+            val url = archiveUrl(pl, channel, program)
+            return Archive(url, lastArchiveMime, lastArchiveUserAgent, lastArchiveCandidates.toList(), lastArchiveLog)
+        } finally { resolutionMutex.unlock() }
+    }
+
+    suspend fun programs(pl: Playlist, channel: Item, offsetDays: Int): List<Prog> {
+        val remaining = ReplayRateLimit.remainingMs(pl.serverUrl)
+        if (remaining > 0L) throw ReplayRateLimit.Limited(remaining)
+        return when (pl.type) {
+            "stalker" -> ReplaySources.stalkerDay(pl, channel, offsetDays)
+            "m3u" -> try { ReplaySources.m3uPrograms(pl, channel) } catch (e: Exception) {
+                if (e is ReplayRateLimit.Limited || e is kotlinx.coroutines.CancellationException || !ReplaySources.allowSlots(pl, channel)) throw e
+                emptyList()
+            }
+            else -> programs(pl, channel.streamId.orEmpty())
+        }
+    }
+
+    suspend fun archiveUrl(pl: Playlist, channel: Item, p: Prog): String {
+        val remaining = ReplayRateLimit.remainingMs(pl.serverUrl)
+        if (remaining > 0L) throw ReplayRateLimit.Limited(remaining)
+        if (pl.type == "xtream") return archiveUrl(pl, channel.streamId.orEmpty(), channel.cmd.orEmpty(), p)
+        lastArchiveCandidates = arrayListOf()
+        lastArchiveMime = ""
+        lastArchiveUserAgent = ""
+        val resolved = when (pl.type) {
+            "stalker" -> ReplaySources.stalkerLink(pl, p)
+            "m3u" -> ReplayCatchup.build(channel.directUrl.orEmpty(), channel.replayConfig, p.startMs, p.endMs, System.currentTimeMillis(), p.replayId)
+            else -> ""
+        }
+        if (resolved.isBlank()) { lastArchiveLog = "Aucune archive declaree pour cet horaire."; return "" }
+        lastArchiveCandidates = arrayListOf(resolved)
+        lastArchiveUserAgent = if (pl.type == "stalker") Api.stalkerHeaders(pl)["User-Agent"].orEmpty()
+            else Api.m3uUserAgents[channel.directUrl.orEmpty()].orEmpty()
+        lastArchiveLog = "Archive resolue par le protocole de la source, sans sonde video."
+        return resolved
+    }
+
     suspend fun archiveUrl(pl: Playlist, streamId: String, cmd: String, p: Prog): String =
         withContext(Dispatchers.IO) {
             lastArchiveCandidates = arrayListOf()
@@ -308,7 +360,7 @@ object ReplayApi {
     // ---- v366 : heure du serveur ----
     // Le guide Xtream et les URL timeshift sont exprimes dans le fuseau du SERVEUR.
     // On calcule une fois le decalage serveur/UTC, puis on convertit tout proprement.
-    private val srvOffset = HashMap<String, Long>()
+    private val srvOffset = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     private fun serverOffsetMs(pl: Playlist): Long {
         val key = pl.serverUrl + "|" + pl.username

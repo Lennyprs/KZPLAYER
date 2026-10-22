@@ -1,0 +1,68 @@
+KZ PLAYER 3.5.7 — V121 — REPLAY XTREAM / MAC-STALKER / M3U
+
+CE QUI A ETE TROUVE
+La V117 et ses correctifs precedents interdisaient explicitement les ecrans replay Stalker/MAC et refusaient les sources M3U. Leur parseur perdait les attributs catch-up. Le passage a un autre decodeur ne pouvait pas corriger ces blocages.
+IPTVnator et Kodi IPTV Simple ont ete examines comme references. KZ conserve son lecteur Android Media3 et ses reglages approuves : il n'embarque pas l'application Electron IPTVnator et n'impose pas d'autre lecteur a installer.
+
+CE QUI CHANGE
+XTREAM
+- Les formats PHP extension=ts et extension=m3u8 sont ajoutes aux variantes existantes.
+- L'identite HTTP alternative est essayee une fois sur la MEME URL apres 401/403 ou reponse non video, avant d'epuiser tous les formats.
+- Les reprises automatiques Media3 sont desactivees pour les erreurs HTTP 4xx definitives, sauf 408. Une reponse rejetée comme non video n'est pas rouverte automatiquement en boucle.
+- Une indication explicite extension/type/output=m3u8 selectionne le HLS avant ouverture.
+- Les protections V120 restent actives : arret sur 429, Retry-After, pause persistante par hote, pas de rotation d'identite pour contourner la pause.
+- Le code HTTP des refus EPG est conserve ; un 429 EPG declenche aussi la pause.
+
+MAC / STALKER / MINISTRA NATIF
+- Retrait des interdictions d'ecran.
+- Guide du jour demande par type=epg, action=get_simple_data_table, avec pagination reelle.
+- Conservation de l'identifiant de l'EMISSION dans l'EPG.
+- Demande du lien via type=tv_archive, action=create_link et la commande native auto /media/IDENTIFIANT_EMISSION.mpg.
+- Le lien retourne par le portail est remis directement au lecteur, sans GET de sonde.
+- Aucun repli fabriquant une archive a partir du lien du direct dans ce nouveau parcours.
+- Les programmes explicitement marques non archives ne sont pas proposes.
+- Pas de faux creneaux horaires Stalker si le portail ne fournit pas d'emission archivee identifiable.
+- La session MAC est reutilisee ; les en-tetes de session sont retires sur les sauts reseau vers une autre origine.
+- Une limite de 32 pages par chaine et par jour borne les reponses anormales.
+
+M3U AVEC CATCH-UP DECLARE
+- Conservation de catchup, catchup-source, catchup-days, catchup-correction, timeshift, tvg-id et URL XMLTV.
+- Modes : default, append, shift/SIPTV, flussonic et Xtream/xc a partir d'un lien compatible.
+- Substitution des instants UNIX, des dates formatees, des durees/diviseurs, de l'offset et du catchup-id quand fourni par XMLTV.
+- Lecture du guide XMLTV, y compris gzip, avec filtrage par tvg-id. DTD et entites externes interdites ; lecture bornee a 64 Mio decomprimes.
+- Si le guide est absent/inexploitable mais le protocole permet la lecture par horaire, proposition de tranches horaires dans la fenetre annoncee.
+- Si catchup-id est obligatoire, aucun identifiant ni programme n'est invente.
+- Le User-Agent de la chaine est conserve pour la requete d'archive ; il n'est pas remplace en boucle.
+- Une URL de catch-up declaree peut garder un chemin /live/ avec des parametres temporels : ce cas n'est plus confondu avec une redirection parasite.
+- Une simple mention « Replay » dans un groupe ne prouve plus l'existence d'archives.
+
+ROBUSTESSE
+- Le resultat de resolution (URL, MIME, identite HTTP, variantes) est copie pour chaque ouverture ; une autre resolution ne remplace pas ces informations au milieu d'une lecture.
+- Annulation des anciens chargements de programmes quand on change de chaine/jour.
+- Diagnostics M3U/Stalker sans URL complete pour ne pas afficher les jetons.
+- Codecs, buffers, profils live/VOD et reprises hors replay preserves.
+- Aucun changement des licences, du backend Google, des panels Cloudflare, des cles ou du circuit de signature.
+
+INSTALLATION
+1. Decompresse le ZIP et copie TOUT son contenu a la racine de ton depot local en remplacant les fichiers. Les nouveaux ReplayCatchup.java, ReplayXmltv.java, ReplayStalker.java et ReplaySources.kt doivent etre presents.
+2. Depuis la racine du depot :
+
+git add app/build.gradle app/src/main/java/com/kzplayer/app/Api.kt app/src/main/java/com/kzplayer/app/Models.kt app/src/main/java/com/kzplayer/app/BrowseActivity.kt app/src/main/java/com/kzplayer/app/PlayerActivity.kt app/src/main/java/com/kzplayer/app/Replay* A-LIRE-REPLAY-V121.txt SOURCES-REPLAY-V121.txt
+git commit -m "Ajoute les protocoles replay MAC et M3U et corrige les reprises Xtream - 3.5.7"
+git push
+
+3. Attends la compilation signee GitHub puis installe l'APK 3.5.7 EN MISE A JOUR, sans desinstaller.
+4. Aucun deploiement Google ou Cloudflare necessaire.
+Le ZIP est le depot source complet, pas un APK deja compile. Les anciens guides conserves sont historiques : utiliser ce guide V121.
+
+LIMITES A NE PAS CONFONDRE AVEC UNE GARANTIE UNIVERSELLE
+Le fournisseur doit offrir les archives et les autoriser sur le compte. Une adresse MAC seule ou un fichier M3U de direct ne cree pas d'archives. Les portails proprietaires non compatibles peuvent necessiter une adaptation supplementaire.
+La compatibilite des protocoles ci-dessus est ajoutee ; le cas HTTP 403 sur ton fournisseur n'est PAS demontre resolu par un essai reel dans cette session.
+Le telechargement reste celui du moteur Xtream existant ; cette livraison ajoute les parcours de LECTURE, pas un nouveau telechargeur universel M3U/MAC.
+Si un quota est deja atteint, aucune mise a jour ne garantit de lever le blocage du serveur. Laisse le compte au repos, ferme les autres lecteurs et telechargements, puis fais un seul essai apres l'attente indiquee. Ne relance pas en boucle.
+
+VALIDATION EFFECTUEE
+127 tests Java reussis : 29 URL/transport, 25 source de lecture, 25 limitation et 48 protocoles.
+Le code Java de production a ete compile pour Java 17 avec interfaces Android/Media3 simulees. Tests XMLTV, modes M3U, controle des dates et octets, persistance de la pause, construction des requetes Stalker et politique d'identite Xtream.
+Deux scenarios utilisent de vrais echanges HTTP sur un serveur LOCAL de test : refus VLC puis acceptation de l'identite alternative en deux requetes ; acceptation de la requete Stalker native par identifiant d'emission.
+Le reste utilise des simulations. Les branchements Kotlin ont ete controles dans les sources ; pas de compilation Android assembleRelease complete ici, pas de test television, pas de connexion a ton compte fournisseur. Ne pas presenter ces tests comme une certification universelle.

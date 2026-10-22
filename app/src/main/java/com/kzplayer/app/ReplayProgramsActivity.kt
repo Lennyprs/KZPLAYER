@@ -28,6 +28,7 @@ class ReplayProgramsActivity : BaseActivity() {
     private var streamId = ""
     private var chCmd = ""
     private var openingArchive = false
+    private var replayChannel: Item? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,23 +44,18 @@ class ReplayProgramsActivity : BaseActivity() {
         rv = findViewById(R.id.progRv)
         rv.layoutManager = LinearLayoutManager(this)
         rv.adapter = ProgAdapter()
+        @Suppress("DEPRECATION")
+        val supplied = intent.getSerializableExtra("replayChannel") as? Item
+        replayChannel = supplied ?: Item(name = chName, logo = chLogo, streamId = streamId, cmd = chCmd)
+        ReplaySources.installQuota(this)
         load()
     }
 
     private fun load() {
         val pl = Session.current
         if (pl == null) { msgTv.text = "Aucun serveur actif."; return }
-        if (pl.type != "xtream" && pl.type != "stalker") {
-            msgTv.text = "Le replay avec archive n'est pas disponible sur ce type de serveur."
-            return
-        }
-        if (pl.type == "stalker") {
-            msgTv.text = "Le Replay est indisponible sur ce type de code. " +
-                "Veuillez l'utiliser via un Xtream ou un M3U"
-            return
-        }
-        if (pl.type == "stalker" && chCmd.isBlank()) {
-            msgTv.text = "Cette chaine ne fournit pas de flux Stalker exploitable."
+        if (pl.type !in listOf("xtream", "stalker", "m3u")) {
+            msgTv.text = "Source replay non prise en charge."
             return
         }
         if (pl.type == "xtream" && streamId.isBlank()) {
@@ -68,9 +64,14 @@ class ReplayProgramsActivity : BaseActivity() {
         }
         msgTv.text = "Chargement des programmes..."
         lifecycleScope.launch {
-            val list = try { ReplayApi.programs(pl, streamId) } catch (e: Exception) { emptyList() }
-            progs = if (list.isNotEmpty()) list else ReplayApi.fallbackSlots(24)
-            msgTv.text = if (list.isEmpty()) "Guide indisponible : choisis une tranche horaire." else ""
+            val channel = replayChannel ?: return@launch
+            val list = try { ReplayApi.programs(pl, channel, 0) } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                msgTv.text = ReplaySources.failureMessage(e)
+                return@launch
+            }
+            progs = if (list.isNotEmpty()) list else if (ReplaySources.allowSlots(pl, channel)) ReplayApi.fallbackSlots(24).filter { ReplaySources.availableSlot(pl, channel, it) } else emptyList()
+            msgTv.text = if (progs.isEmpty()) "Aucune archive exploitable : guide, droits ou fenetre de conservation indisponibles." else if (list.isEmpty()) "Guide indisponible : choisis une tranche horaire." else ""
             rv.adapter?.notifyDataSetChanged()
             // v415 : le premier choix au D-pad est toujours REGARDER, pas Telecharger.
             rv.post {
@@ -86,11 +87,18 @@ class ReplayProgramsActivity : BaseActivity() {
         openingArchive = true
         msgTv.text = "Ouverture de l'archive..."
         lifecycleScope.launch {
-            val url = try { ReplayApi.archiveUrl(pl, streamId, chCmd, p) } catch (e: Exception) { "" }
+            val archive = try { ReplayApi.resolve(pl, replayChannel ?: return@launch, p) } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                openingArchive = false
+                msgTv.text = ReplaySources.failureMessage(e)
+                return@launch
+            }
+            val url = archive.url
             openingArchive = false
             if (url.isBlank()) { msgTv.text = "Archive indisponible pour ce programme."; return@launch }
+            if (Session.current?.id != pl.id) return@launch
             msgTv.text = ""
-            openPlayer(p, url)
+            openPlayer(p, archive)
         }
     }
 
@@ -117,7 +125,8 @@ class ReplayProgramsActivity : BaseActivity() {
         }
     }
 
-    private fun openPlayer(p: ReplayApi.Prog, url: String) {
+    private fun openPlayer(p: ReplayApi.Prog, archive: ReplayApi.Archive) {
+        val url = archive.url
         startActivity(
             Intent(this, PlayerActivity::class.java)
                 .putExtra("url", url)
@@ -126,11 +135,13 @@ class ReplayProgramsActivity : BaseActivity() {
                 .putExtra("historyKind", "live")
                 .putExtra("mode", "vod")
                 .putExtra("replay", true)
+                .putExtra("replayDeclaredCatchup", Session.current?.type != "xtream")
+                .putExtra("replayUaLocked", Session.current?.type != "xtream")
                 .putExtra("replayStartMs", p.startMs)
                 .putExtra("replayEndMs", p.endMs)
-                .putExtra("mime", ReplayApi.lastArchiveMime)
-                .putStringArrayListExtra("replayCandidates", ArrayList(ReplayApi.lastArchiveCandidates))
-                .putExtra("forceUa", ReplayApi.lastArchiveUserAgent)
+                .putExtra("mime", archive.mime)
+                .putStringArrayListExtra("replayCandidates", ArrayList(archive.candidates))
+                .putExtra("forceUa", archive.userAgent)
         )
     }
 

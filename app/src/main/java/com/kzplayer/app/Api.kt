@@ -1150,6 +1150,38 @@ object Api {
         return m
     }
 
+    suspend fun replayPortalCall(pl: Playlist, query: String): String = withContext(Dispatchers.IO) {
+        val remaining = ReplayRateLimit.remainingMs(pl.serverUrl)
+        if (remaining > 0L) throw ReplayRateLimit.Limited(remaining)
+        val portal = ensureStalker(pl) ?: throw java.io.IOException("PORTAIL_INDISPONIBLE")
+        val target = "$portal?$query"
+        var post = false
+        while (true) {
+            val builder = Request.Builder().url(if (post) portal else target)
+            for ((key, value) in stalkerHeaders(pl)) builder.header(key, value)
+            builder.header("User-Agent", if (stbCompat) "Mozilla/5.0 (QtEmbedded; Linux)" else currentStbProfile.ua)
+            builder.header("Accept", "*/*")
+            if (post) builder.post(FormBody.Builder().apply {
+                for (part in query.split("&")) addEncoded(part.substringBefore('='), part.substringAfter('=', ""))
+            }.build())
+            val response = client.newCall(builder.build()).execute()
+            response.use { result ->
+                if (result.code == 429) {
+                    ReplayRateLimit.recordStatus(pl.serverUrl, 429, result.headers.toMultimap())
+                    throw ReplayRateLimit.Limited(ReplayRateLimit.remainingMs(pl.serverUrl))
+                }
+                if (result.code == 405 && !post) post = true
+                else {
+                    if (!result.isSuccessful) throw ReplayRateLimit.HttpFailure(result.code)
+                    return@withContext result.body?.string().orEmpty()
+                }
+            }
+        }
+        @Suppress("UNREACHABLE_CODE") ""
+    }
+
+    fun replayCleanCommand(pl: Playlist, command: String): String = cleanCmdUrl(command, pl)
+
     private fun stbCall(pl: Playlist, portal: String, query: String): String {
         fun applyStbHeaders(b: Request.Builder): Request.Builder {
             b.header("User-Agent", if (stbCompat) "Mozilla/5.0 (QtEmbedded; Linux)" else currentStbProfile.ua)
@@ -1975,17 +2007,23 @@ object Api {
         var group = ""
         var summary = ""
         var ua = ""
+        var replayHeader = ""
+        var replayEntry = ""
         fun ajoute(u: String) {
             val kind = classifyM3u(group, u)
-            val catchup = group.contains("catch", true) || group.contains("replay", true) || group.contains("archive", true)
-            out.add(Item(name = name.ifBlank { u }, logo = logo, kind = kind, directUrl = u, description = group, summary = summary, catchup = catchup))
+            val replayConfig = ReplayCatchup.parse(replayEntry, replayHeader)
+            val catchup = replayConfig.declared()
+            out.add(Item(name = name.ifBlank { u }, logo = logo, kind = kind, directUrl = u, description = group, summary = summary, catchup = catchup, replayConfig = replayConfig))
             if (ua.isNotBlank()) { try { m3uUserAgents[u] = ua } catch (e: Throwable) {} }
-            name = ""; logo = ""; group = ""; summary = ""; ua = ""
+            name = ""; logo = ""; group = ""; summary = ""; ua = ""; replayEntry = ""
         }
         val propre = txt.replace("\r\n", "\n").replace('\r', '\n')
         for (raw in propre.split('\n')) {
             val line = raw.trim().removePrefix("\uFEFF").trim()
-            if (line.startsWith("#EXTINF")) {
+            if (line.startsWith("#EXTM3U", true)) {
+                replayHeader = line
+            } else if (line.startsWith("#EXTINF")) {
+                replayEntry = line
                 var info = line
                 var urlCollee = ""
                 val m = Regex("(?i)\\s(https?://[^\\s]+)$").find(line)
