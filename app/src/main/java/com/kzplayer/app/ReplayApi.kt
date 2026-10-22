@@ -228,6 +228,15 @@ object ReplayApi {
                     System.lineSeparator() + Api.lastArchiveStalkerLog
                 return@withContext ""
             }
+            // V119 : pas de GET de sonde avant Xtream : quotas et jetons peuvent
+            // refuser la seconde ouverture. ReplayDataSource controle le vrai flux.
+            if (pl.type == "xtream") {
+                lastArchiveMime = ""
+                lastArchiveUserAgent = "VLC/3.0.20 LibVLC/3.0.20"
+                lastArchiveCandidates = ArrayList(cands)
+                lastArchiveLog = "Lecture directe des variantes d'archive ; controles sur la connexion de lecture."
+                return@withContext cands.first()
+            }
             // V117 : aucune concurrence entre sondes sur un compte IPTV.
             val resolved = ReplayTransport.resolve(Api.imageClient(), cands, p.startMs, p.endMs)
             lastArchiveMime = resolved.mime

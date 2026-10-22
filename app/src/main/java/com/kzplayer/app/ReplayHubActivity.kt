@@ -256,6 +256,8 @@ class ReplayHubActivity : BaseActivity() {
                     .putExtra("mode", "vod")
                     .putExtra("mime", ReplayApi.lastArchiveMime)
                     .putExtra("replay", true)
+                    .putExtra("replayStartMs", p.startMs)
+                    .putExtra("replayEndMs", p.endMs)
                     .putStringArrayListExtra("replayCandidates", ArrayList(ReplayApi.lastArchiveCandidates))
                     .putExtra("forceUa", ReplayApi.lastArchiveUserAgent)
             )

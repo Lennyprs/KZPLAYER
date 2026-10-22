@@ -1,0 +1,45 @@
+KZ PLAYER 3.5.5 — REPLAY V119
+Base : ton projet V117, avec les corrections V118 conservees.
+Le guide courant est celui-ci ; le guide V118 conserve dans l'archive est historique.
+
+CE QUI CHANGE
+1. Plus de GET de sonde du flux Xtream avant la lecture : l'archive n'est pas ouverte puis refermee avant d'etre rouverte dans le lecteur. Cela supprime cette source de double connexion et de consommation de jeton temporaire.
+2. Les controles sont effectues sur la connexion reellement utilisee par Media3. Les octets inspectes sont restitues sans perte ni duplication. Le corps TS n'est pas lu jusqu'a sa fin pour une verification.
+3. Le code ajoute les routes /timeshift/utilisateur/motdepasse/duree/TIMESTAMP_UNIX/chaine.m3u8 et .ts. Les variantes datees et PHP restent disponibles. Aucun decalage horaire arbitraire de +/- une ou plusieurs heures n'est ajoute.
+4. Le message d'echec indique le code HTTP numerique lorsqu'il est disponible dans la chaine de causes, avec une trace bornee des variantes essayees. Les identifiants restent masques ; ne transmets jamais une capture contenant des identifiants visibles.
+5. Les deux ecrans replay transmettent les bornes temporelles du programme au controleur de lecture.
+
+PROTECTIONS
+- Refus d'une redirection initiale identifiee vers /live/.
+- Refus des reponses HTML/JSON/XML detectees et des manifestes dont le premier horodatage exploitable est hors programme, avec les marges existantes.
+- HLS reconnu aussi sur un endpoint PHP sans bon Content-Type.
+- Lecture des segments et des positions de seek preservee. Un paquet TS lu apres une avance/recul n'est pas pris pour un en-tete JSON.
+- La verification du debut de manifeste est bornee a 8 KiB ; un manifeste plus grand est ensuite transmis integralement.
+- Ces controles ne certifient pas l'horaire d'un flux TS sans metadonnees, ni celui d'un contenu sans horodatage exploitable. Ils ne peuvent pas creer une archive inexistante.
+- Reglages communs HTTP/DNS, decodeurs, buffers et reprises du direct/films/series hors replay inchanges.
+- Pas de changement du backend, des panels, des licences ou des cles de signature.
+
+INSTALLATION
+Decompresse KZ-PLAYER-GITHUB-COMPLET-3.5.5-V119-REPLAY.zip puis copie son contenu a la racine du depot local, en remplacant les fichiers.
+Le NOUVEAU fichier ReplayDataSource.java doit etre copie et envoye avec les autres.
+Execute depuis la racine du depot :
+
+git add app/build.gradle app/src/main/java/com/kzplayer/app/Replay* app/src/main/java/com/kzplayer/app/PlayerActivity.kt A-LIRE-REPLAY-V119.txt
+git commit -m "Corrige la connexion replay KZ Player 3.5.5"
+git push
+
+Attends la compilation signee GitHub puis installe l'APK 3.5.5 en mise a jour, sans desinstaller.
+Aucun fichier Google Apps Script ou Cloudflare a remplacer.
+Les APK personnalisees recuperent la correction lors de leur prochaine compilation depuis ces sources.
+
+ESSAI
+Ferme completement TiviMate et les autres lectures sur ce compte avant le test, et evite un telechargement IPTV simultane : certains abonnements n'autorisent qu'une lecture.
+Lance le meme programme dans KZ Player 3.5.5.
+Si cela echoue encore, le nouveau message doit afficher HTTP 403, HTTP 404, HTTP 512 ou un autre diagnostic precis. Une photo de cette fenetre permettra de ne plus se limiter au generique ERROR_CODE_IO_BAD_HTTP_STATUS.
+Le fonctionnement dans un autre lecteur confirme l'accessibilite de l'archive, mais ne permet pas a lui seul de prouver laquelle de ces incompatibilites est en cause dans KZ Player.
+
+VALIDATION
+54 tests Java reussis avec interfaces Android/Media3/OkHttp simulees : 29 tests URL/transport et 25 tests de la source de lecture.
+Les fichiers Java de production sont compiles pour Java 17 dans ce banc. Verification de l'ouverture unique d'un lien a usage unique, des octets manifestes/TS, des seek et segments, des refus live/horaire, du maintien des exceptions HTTP et des variantes UNIX.
+XML valide. Six fichiers d'origine modifies depuis V118, plus ReplayDataSource.java et ce guide. Tous les autres fichiers de V118 sont conserves octet pour octet.
+Pas de compilation assembleRelease Android ni de test sur ton fournisseur/ta television dans cette session : SDK Android et environnement Gradle complets indisponibles. Le workflow GitHub et l'essai reel restent necessaires. Aucun succes universel de lecture n'est affirme.

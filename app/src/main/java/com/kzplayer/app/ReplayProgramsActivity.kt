@@ -126,6 +126,8 @@ class ReplayProgramsActivity : BaseActivity() {
                 .putExtra("historyKind", "live")
                 .putExtra("mode", "vod")
                 .putExtra("replay", true)
+                .putExtra("replayStartMs", p.startMs)
+                .putExtra("replayEndMs", p.endMs)
                 .putExtra("mime", ReplayApi.lastArchiveMime)
                 .putStringArrayListExtra("replayCandidates", ArrayList(ReplayApi.lastArchiveCandidates))
                 .putExtra("forceUa", ReplayApi.lastArchiveUserAgent)

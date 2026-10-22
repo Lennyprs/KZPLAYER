@@ -61,6 +61,27 @@ class PlayerActivity : AppCompatActivity() {
         recreate()
         return true
     }
+    private fun replayFailureDetail(error: Throwable, fallback: String): String {
+        var current: Throwable? = error
+        var depth = 0
+        while (depth++ < 10) {
+            val cause = current ?: break
+            if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)
+                return "HTTP ${cause.responseCode}"
+            if (cause is ReplayDataSource.RejectedArchive) return cause.reason
+            if (cause.cause === cause) break
+            current = cause.cause
+        }
+        return fallback
+    }
+    private fun rememberReplayFailure(detail: String): String {
+        val lines = intent.getStringArrayListExtra("replayFailureTrace") ?: arrayListOf<String>()
+        val ua = if (intent.getStringExtra("forceUa").orEmpty().startsWith("VLC")) "VLC" else "IPTV"
+        lines.add("Variante ${candIdx + 1}/${candidates.size} - $ua : $detail")
+        while (lines.size > 12) lines.removeAt(0)
+        intent.putStringArrayListExtra("replayFailureTrace", lines)
+        return lines.joinToString("\n")
+    }
     private var candIdx = 0
     // v386 : retenu le temps de la session. true = les films/series Stalker sont demandes
     // sans les en-tetes MAG (repli automatique quand le serveur les refuse).
@@ -403,7 +424,17 @@ class PlayerActivity : AppCompatActivity() {
             if (localScheme == "file" || localScheme == "content") {
                 androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
             } else httpFactory
-        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(sourceFactory)
+        // V119 : un seul GET d'archive, controle puis lu sur la meme connexion.
+        val checkedSourceFactory: androidx.media3.datasource.DataSource.Factory =
+            if (isReplayMode && plCur?.type != "stalker" && localScheme != "file" && localScheme != "content") {
+                ReplayDataSource.Factory(
+                    sourceFactory,
+                    listOf(url) + intent.getStringArrayListExtra("replayCandidates").orEmpty(),
+                    intent.getLongExtra("replayStartMs", 0L),
+                    intent.getLongExtra("replayEndMs", 0L)
+                )
+            } else sourceFactory
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(checkedSourceFactory)
             .setLoadErrorHandlingPolicy(errPolicy)
 
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
@@ -575,6 +606,8 @@ class PlayerActivity : AppCompatActivity() {
 
             override fun onPlayerError(error: PlaybackException) {
                 if (isReplayMode) {
+                    val replayDetail = replayFailureDetail(error, error.errorCodeName)
+                    val replayTrace = rememberReplayFailure(replayDetail)
                     recoveryHandler.removeCallbacks(replayStartupWatchdog)
                     recoveryHandler.removeCallbacks(startupWatchdog)
                     val replayUrl = candidates.getOrNull(candIdx).orEmpty()
@@ -602,8 +635,8 @@ class PlayerActivity : AppCompatActivity() {
                     if (retryReplayUserAgent()) return
                     val u = ReplayUrls.safeDiagnosticUrl(candidates.getOrNull(candIdx).orEmpty())
                     androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
-                        .setTitle("Replay impossible : " + error.errorCodeName)
-                        .setMessage("Aucune variante d'archive n'a pu etre lue.\n" + u)
+                        .setTitle("Replay impossible : " + replayDetail)
+                        .setMessage("Aucune variante d'archive n'a pu etre lue.\n" + replayTrace + "\n\n" + u)
                         .setPositiveButton("OK") { d, _ -> d.dismiss() }
                         .show()
                     return
