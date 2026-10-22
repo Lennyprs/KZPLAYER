@@ -4,9 +4,12 @@ import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
+import android.widget.Toast
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -253,6 +256,62 @@ class ReplayHubActivity : BaseActivity() {
         }
     }
 
+    // V115 : l'ecran principal Replay partage la carte a deux actions avec
+    // ReplayProgramsActivity ; chaque controle enfant doit avoir sa propre action.
+    private fun downloadProg(p: ReplayApi.Prog) {
+        val pl = Session.current
+        val ch = selCh
+        if (pl == null || ch == null) {
+            msgTv.text = "Choisis un serveur et une chaine avant de telecharger."
+            return
+        }
+        if (pl.type != "xtream") {
+            val message = "Le telechargement Replay est disponible pour Xtream."
+            msgTv.text = message
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            return
+        }
+        msgTv.text = "Preparation du telechargement..."
+        Toast.makeText(this, "Preparation du replay...", Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            // Meme moteur et memes URL que l'autre ecran Replay.
+            // La creation de la tache n'attend pas de sonde video.
+            val urls = try {
+                ReplayApi.archiveDownloadUrls(pl, ch.streamId.orEmpty(), p)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList<String>()
+            }
+            val title = listOf(p.title, ch.name, p.time)
+                .filter { it.isNotBlank() }.joinToString(" - ")
+            val result = Downloads.enqueueInternalResult(this@ReplayHubActivity, title, urls)
+            msgTv.text = result.message
+            Toast.makeText(this@ReplayHubActivity, result.message, Toast.LENGTH_LONG).show()
+            if (result.started) {
+                startActivity(Intent(this@ReplayHubActivity, DownloadsActivity::class.java))
+            }
+        }
+    }
+
+    // Toucher/souris et OK/Entree de la telecommande passent par la meme action.
+    private fun bindReplayAction(view: View, action: () -> Unit) {
+        view.setOnClickListener { action() }
+        view.setOnKeyListener { target, keyCode, event ->
+            val activate = keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                keyCode == KeyEvent.KEYCODE_ENTER ||
+                keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+                keyCode == KeyEvent.KEYCODE_BUTTON_A
+            if (!activate) false
+            else {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+                    target.performClick()
+                }
+                true
+            }
+        }
+    }
+
     // Colonne de gauche : categories (si aucune categorie ouverte) ou chaines.
     inner class LeftAdapter : RecyclerView.Adapter<LeftAdapter.VH>() {
         inner class VH(val v: View) : RecyclerView.ViewHolder(v) {
@@ -293,6 +352,8 @@ class ReplayHubActivity : BaseActivity() {
 
     inner class ProgAdapter : RecyclerView.Adapter<ProgAdapter.VH>() {
         inner class VH(val v: View) : RecyclerView.ViewHolder(v) {
+            val playArea: View = v.findViewById(R.id.replayPlayArea)
+            val download: Button = v.findViewById(R.id.replayDownloadBtn)
             val time: TextView = v.findViewById(R.id.progTime)
             val title: TextView = v.findViewById(R.id.progTitle)
             val desc: TextView = v.findViewById(R.id.progDesc)
@@ -307,9 +368,17 @@ class ReplayHubActivity : BaseActivity() {
             if (p.desc.isBlank()) holder.desc.visibility = View.GONE
             else { holder.desc.visibility = View.VISIBLE; holder.desc.text = p.desc }
             holder.v.setOnClickListener { playProg(p) }
-            holder.v.setOnFocusChangeListener { view, has ->
+            bindReplayAction(holder.playArea) { playProg(p) }
+            bindReplayAction(holder.download) { downloadProg(p) }
+            holder.playArea.nextFocusRightId = R.id.replayDownloadBtn
+            holder.download.nextFocusLeftId = R.id.replayPlayArea
+            holder.playArea.setOnFocusChangeListener { view, has ->
                 view.animate().scaleX(if (has) 1.02f else 1f).scaleY(if (has) 1.02f else 1f)
                     .setDuration(100).start()
+            }
+            holder.download.setOnFocusChangeListener { view, has ->
+                view.animate().scaleX(if (has) 1.08f else 1f).scaleY(if (has) 1.08f else 1f)
+                    .setDuration(110).start()
             }
         }
     }
