@@ -27,6 +27,7 @@ class ReplayProgramsActivity : BaseActivity() {
     private var chLogo = ""
     private var streamId = ""
     private var chCmd = ""
+    private var openingArchive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,9 +82,12 @@ class ReplayProgramsActivity : BaseActivity() {
 
     private fun playProg(p: ReplayApi.Prog) {
         val pl = Session.current ?: return
+        if (openingArchive) return
+        openingArchive = true
         msgTv.text = "Ouverture de l'archive..."
         lifecycleScope.launch {
             val url = try { ReplayApi.archiveUrl(pl, streamId, chCmd, p) } catch (e: Exception) { "" }
+            openingArchive = false
             if (url.isBlank()) { msgTv.text = "Archive indisponible pour ce programme."; return@launch }
             msgTv.text = ""
             openPlayer(p, url)

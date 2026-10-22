@@ -20,16 +20,24 @@ public final class ReplayUrls {
         if (base == null || stream == null || stream.trim().isEmpty() || stamp == null || stamp.isEmpty()) return new ArrayList<>();
         String root = base.replaceAll("/+$", "");
         String prefix = root + "/timeshift/" + enc(user) + "/" + enc(pass) + "/" + Math.max(1, minutes) + "/" + stamp + "/" + enc(stream);
-        urls.add(prefix + ".ts");
         if (hls) urls.add(prefix + ".m3u8");
+        urls.add(prefix + ".ts");
         String query = "?username=" + enc(user) + "&password=" + enc(pass) + "&stream=" + enc(stream);
         for (String start : new String[]{stamp, String.valueOf(startSeconds)}) {
             String tail = query + "&start=" + enc(start) + "&duration=" + Math.max(1, minutes);
             urls.add(root + "/streaming/timeshift.php" + tail);
             urls.add(root + "/timeshift.php" + tail);
+            if (hls) urls.add(root + "/streaming/timeshift.php" + tail + "&type=m3u8");
         }
         urls.add(prefix);
         return new ArrayList<>(urls);
+    }
+    public static String alternateUserAgent(String current) {
+        return current != null && current.startsWith("VLC")
+            ? "IPTVSmartersPro" : "VLC/3.0.20 LibVLC/3.0.20";
+    }
+    public static boolean replayStarted(boolean ready, int videoWidth, long positionMs) {
+        return ready && (videoWidth > 0 || positionMs >= 1000L);
     }
     public static boolean isArchiveUrl(String url) {
         try {

@@ -33,12 +33,14 @@ class PlayerActivity : AppCompatActivity() {
     private val replayStartupWatchdog = object : Runnable {
         override fun run() {
             val p = player ?: return
-            if (!isReplayMode || (p.playbackState == Player.STATE_READY && p.videoSize.width > 0)) return
+            if (!isReplayMode || demarrageOk || !p.playWhenReady ||
+                ReplayUrls.replayStarted(p.playbackState == Player.STATE_READY, p.videoSize.width, p.currentPosition)) return
             if (candIdx < candidates.size - 1) {
                 candIdx++
                 intent.putExtra("replayCandidateIndex", candIdx)
                 playCurrent()
             } else {
+                if (retryReplayUserAgent()) return
                 p.pause()
                 androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
                     .setTitle("Replay indisponible")
@@ -47,6 +49,17 @@ class PlayerActivity : AppCompatActivity() {
                     .show()
             }
         }
+    }
+    // V118 : une seule bascule d'identite HTTP, exclusivement pour le replay Xtream.
+    private fun retryReplayUserAgent(): Boolean {
+        if (!isReplayMode || Session.current?.type == "stalker" ||
+            intent.getBooleanExtra("replayUaRetry", false)) return false
+        intent.putExtra("replayUaRetry", true)
+        intent.putExtra("forceUa", ReplayUrls.alternateUserAgent(intent.getStringExtra("forceUa")))
+        intent.putExtra("replayCandidateIndex", 0)
+        intent.removeExtra("replayHlsRetryUrl")
+        recreate()
+        return true
     }
     private var candIdx = 0
     // v386 : retenu le temps de la session. true = les films/series Stalker sont demandes
@@ -586,6 +599,7 @@ class PlayerActivity : AppCompatActivity() {
                         playCurrent()
                         return
                     }
+                    if (retryReplayUserAgent()) return
                     val u = ReplayUrls.safeDiagnosticUrl(candidates.getOrNull(candIdx).orEmpty())
                     androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
                         .setTitle("Replay impossible : " + error.errorCodeName)
@@ -661,6 +675,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun playCurrent() {
         val p = player ?: return
         val u = candidates.getOrNull(candIdx) ?: return
+        if (isReplayMode) demarrageOk = false
         lastFrames = -1L
         lastFramesTs = SystemClock.elapsedRealtime()
         // On laisse ExoPlayer auto-detecter le format (extension + Content-Type + redirections).
@@ -675,7 +690,7 @@ class PlayerActivity : AppCompatActivity() {
         p.play()
         if (isReplayMode) {
             recoveryHandler.removeCallbacks(replayStartupWatchdog)
-            recoveryHandler.postDelayed(replayStartupWatchdog, 12000)
+            recoveryHandler.postDelayed(replayStartupWatchdog, 20000)
         }
     }
 

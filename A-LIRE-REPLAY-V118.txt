@@ -1,0 +1,44 @@
+KZ PLAYER 3.5.4 — CORRECTIF REPLAY V118
+
+BASE : ton archive KZ-PLAYER-GITHUB-COMPLET-3.5.3-V117.zip.
+Il ne s'agit pas d'un retour a une ancienne version du projet.
+
+CORRECTIONS
+- Lecture : les variantes HLS sont proposees avant le MPEG-TS brut ; variantes PHP HLS ajoutees. Les URL de telechargement restent sans HLS.
+- Une sonde reseau refusee pour quota/identite HTTP, incomplete ou expiree ne bloque plus automatiquement l'ouverture du lecteur. Les variantes encore possibles sont essayees par Media3.
+- Sondes sequentielles, reponses fermees avant la suivante, au plus 1 Ko d'inspection et budget global de preparation de 12 secondes. Ce budget ne represente pas un delai garanti de demarrage video.
+- Les deux User-Agent sont essayes sur la premiere URL avant de consommer le budget sur les autres adresses.
+- Si les variantes echouent dans le lecteur, une seule bascule supplementaire de User-Agent est permise pour le replay hors Stalker.
+- Surveillance de demarrage replay portee de 12 a 20 secondes. Une lecture deja partie, une progression audio ou une pause demandee ne provoquent pas de changement d'archive a tort.
+- Protection contre les doubles clics d'ouverture egalement dans l'ecran secondaire des programmes.
+- Les playlists HLS avec marqueur UTF-8 BOM sont reconnues.
+
+PROTECTIONS CONSERVEES
+Les reponses identifiees comme redirection /live/, mauvais programme date, page HTML/JSON/XML ou lien inexistant restent exclues. Aucun lien de direct de secours n'est genere.
+Sans horodatage exploitable, une sonde ne peut pas certifier l'identite temporelle de chaque segment : cette limite n'est pas une preuve de conformite du contenu fourni par le serveur.
+Aucune modification des reglages de decodeur, des buffers, de la source HTTP commune, du DNS ou de la lecture du direct/films/series hors replay.
+La personnalisation des APK, les licences, Active Code, les panels, les signatures, les mises a jour et les outils de compilation de V117 sont conserves.
+Le comportement Stalker non disponible dans les ecrans replay de V117 n'est pas transforme en prise en charge garantie par ce correctif.
+
+INSTALLATION
+1. Decompresse KZ-PLAYER-GITHUB-COMPLET-3.5.4-V118-REPLAY.zip.
+2. Copie son CONTENU a la racine de ton depot local KZPLAYER en remplacant les fichiers. Les dossiers app, tools et .github doivent rester a la racine du depot, pas dans un sous-dossier supplementaire.
+3. Depuis la racine du depot, execute :
+
+git add app/build.gradle app/src/main/java/com/kzplayer/app/Replay* app/src/main/java/com/kzplayer/app/PlayerActivity.kt A-LIRE-REPLAY-V118.txt
+git commit -m "Corrige le replay KZ Player 3.5.4"
+git push
+
+4. Attends le workflow de compilation signee, puis installe l'APK 3.5.4 issue de cette compilation, ou utilise le mecanisme de mise a jour une fois publiee.
+Aucun fichier Google Apps Script ou Cloudflare a remplacer pour ce correctif.
+Les APK personnalisees beneficient des corrections a leur prochaine compilation depuis ces sources.
+Ne desinstalle pas l'application pour cette mise a jour : utilise une mise a jour signee avec les memes cles.
+
+VERIFICATIONS EFFECTUEES
+- 29 tests Java reussis : URL d'archive, ordre HLS/TS, encodage, telechargement non-HLS, sondes en echec, changement d'identite HTTP, MIME, BOM, fermeture des reponses et refus des reponses identifiees comme direct/mauvais horaire.
+- Les helpers Java de production sont compiles pour Java 17 avec une interface OkHttp simulee dans le banc de test. Ce n'est pas une verification reseau sur un fournisseur IPTV reel.
+- XML du projet valide et comparaison de l'archive : seulement cinq fichiers d'origine modifies, plus ce guide.
+- Configuration commune du lecteur et reprises d'erreur hors replay comparees a V117 et conservees.
+- Pas de SDK Android/Gradle complet disponible ici : aucune compilation assembleRelease ni installation sur television n'a ete executee dans cette session. La compilation Android doit etre verifiee par ton workflow GitHub.
+
+Un serveur doit reellement proposer l'archive et le compte doit y avoir acces. Aucun correctif client ne peut creer une archive absente ou retirer une restriction imposee par le fournisseur.
