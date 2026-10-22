@@ -227,7 +227,7 @@ object ReplayApi {
             // v366 : tous les candidats sont testes EN MEME TEMPS (avant : un par un,
             // ce qui pouvait prendre 30 s). On garde le meilleur dans l ordre de priorite.
             val results = coroutineScope {
-                cands.map { u -> async(Dispatchers.IO) { Pair(u, probe(u, p.startMs)) } }
+                cands.map { u -> async(Dispatchers.IO) { Pair(u, probe(u, p.startMs, p.endMs)) } }
                     .map { it.await() }
             }
             val tried = ArrayList<String>()
@@ -300,8 +300,8 @@ object ReplayApi {
             out.add(srv + "/streaming/timeshift.php?username=" + u + "&password=" + w +
                 "&stream=" + enc(streamId) + "&start=" + enc(stamp) + "&duration=" + dur + "&type=m3u8")
             out.add(srv + "/timeshift/" + u + "/" + w + "/" + dur + "/" + stamp + "/" + streamId)
-            out.add(srv + "/live/" + u + "/" + w + "/" + streamId + ".m3u8?utc=" + startSec +
-                "&lutc=" + nowSec)
+            // V116 : ne JAMAIS proposer /live/ comme repli Xtream.
+            // Certains serveurs ignorent utc/lutc et renvoient le direct sans erreur.
             return out.distinct()
         }
         if (pl.type != "stalker" || cmd.isBlank()) return out
@@ -396,7 +396,7 @@ object ReplayApi {
             .build()
     }
 
-    private fun probe(url: String, wantStartMs: Long): Verdict {
+    private fun probe(url: String, wantStartMs: Long, wantEndMs: Long): Verdict {
         return try {
             val req = Request.Builder().url(url)
                 .header("Range", "bytes=0-32767")
@@ -408,7 +408,9 @@ object ReplayApi {
                 if (ct.contains("html") || ct.contains("json") || ct.contains("/xml")) {
                     return@use Verdict(false, "", "PAGE ")
                 }
-                val bytes = try { r.body?.bytes() } catch (e: Exception) { null }
+                // V116 : certains serveurs ignorent Range. Ne pas tenter de lire
+                // tout le flux TS (potentiellement infini) pendant la verification.
+                val bytes = try { r.peekBody(32768L).bytes() } catch (e: Exception) { null }
                 if (bytes == null || bytes.size < 8) return@use Verdict(false, "", "VIDE ")
                 val head = String(bytes, 0, if (bytes.size > 4096) 4096 else bytes.size, Charsets.ISO_8859_1)
                 val t = head.trimStart()
@@ -417,7 +419,7 @@ object ReplayApi {
                 }
                 if (t.startsWith("#EXTM3U")) {
                     val body = String(bytes, Charsets.ISO_8859_1)
-                    if (isLivePlaylist(body, wantStartMs)) Verdict(false, "", "DIRECT")
+                    if (ReplayArchiveGuard.isOutsideProgram(body, wantStartMs, wantEndMs)) Verdict(false, "", "DIRECT")
                     else Verdict(true, "application/x-mpegURL", "OK-HLS")
                 } else if (bytes[0] == 0x47.toByte()) {
                     Verdict(true, "video/mp2t", "OK-TS ")
@@ -429,19 +431,9 @@ object ReplayApi {
         } catch (e: Exception) { Verdict(false, "", "ERR  ") }
     }
 
-    // true = cette playlist est le DIRECT (mauvais jour) et non l archive demandee.
-    private fun isLivePlaylist(body: String, wantStartMs: Long): Boolean {
-        val m = Regex("EXT-X-PROGRAM-DATE-TIME:([0-9]{4})-([0-9]{2})-([0-9]{2})").find(body)
-            ?: return false
-        val got = m.groupValues[1] + "-" + m.groupValues[2] + "-" + m.groupValues[3]
-        val dayMs = 24L * 3600L * 1000L
-        val f = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val want = try { f.format(Date(wantStartMs)) } catch (e: Exception) { "" }
-        if (want.isBlank()) return false
-        val prev = try { f.format(Date(wantStartMs - dayMs)) } catch (e: Exception) { "" }
-        val next = try { f.format(Date(wantStartMs + dayMs)) } catch (e: Exception) { "" }
-        return !(got == want || got == prev || got == next)
-    }
+    // V116 : validation des horodatages HLS complets dans ReplayArchiveGuard.
+    // L'ancien controle n'examinait que le jour (+/- 1 jour) : le direct du soir
+    // etait donc accepte pour une emission demandee le meme jour a 13 h.
 
     // Ajoute utc=<debut> & lutc=<maintenant> (+ duree) sans casser les parametres deja presents.
     private fun withArchiveParams(url: String, p: Prog): String {
