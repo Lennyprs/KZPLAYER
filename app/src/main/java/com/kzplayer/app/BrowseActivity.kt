@@ -69,11 +69,12 @@ class BrowseActivity : BaseActivity() {
     private var lastItemFocusPos: Int = 0
     private var focusItemsAfterLoad: Boolean = false
     private var ownPlaylistId: String = ""
-    private var searchEpoch = 0
+    @Volatile private var searchEpoch = 0
     private var lastRealCategories: List<Category> = emptyList()
     private var lastBaseCategories: List<Category> = emptyList()
     private var didWhitelistRefresh = false
     private var didWarmSearch = false
+    private var ignoreSearchChange = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -128,6 +129,7 @@ class BrowseActivity : BaseActivity() {
 
         searchEt.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
+                if (ignoreSearchChange) return
                 val q = searchEt.text.toString().trim()
                 // Films/Series : la recherche classique cherche sur TOUS les serveurs.
                 if ((kind == "movie" || kind == "series") && q.length >= 2) {
@@ -135,7 +137,9 @@ class BrowseActivity : BaseActivity() {
                 } else {
                     multiMode = false
                     searchJob?.cancel()
-                    ensureAllLoadedForSearch()
+                    searchEpoch++
+                    setLoading(false)
+                    if (kind != "movie" && kind != "series") ensureAllLoadedForSearch()
                     applyFilter()
                 }
             }
@@ -144,6 +148,7 @@ class BrowseActivity : BaseActivity() {
         })
 
         loadCategories()
+        maybeWarmSearch()
 
         // Commande vocale : "voicePlay" = lancer directement une chaine (traite apres le
         // chargement des categories, cf. maybeStartVoicePlay) ; "voiceQuery" = pre-remplir la recherche.
@@ -207,19 +212,20 @@ class BrowseActivity : BaseActivity() {
                     )
                     bindCategories()
                     setLoading(false)
-                    selectCategory(categories[0])
+                    if (!multiMode) selectCategory(categories[0])
                     return@launch
                 }
                 when (pl.type) {
                     "m3u" -> {
                         categories = prepareCategories(Api.m3uCategories(pl, realKind), pl)
                         bindCategories()
+                        if (multiMode) return@launch
                         if (categories.size > 1) {
                             setLoading(false)
                             msgTv.text = if (kind == "replay") "Choisis une cat\u00e9gorie replay \u00e0 gauche." else "Choisis une categorie a gauche."
-                            selectCategory(categories[0])
+                            if (!multiMode) selectCategory(categories[0])
                         } else if (categories.isNotEmpty()) {
-                            selectCategory(categories[0])
+                            if (!multiMode) selectCategory(categories[0])
                         } else {
                             setLoading(false)
                             msgTv.text = "Aucun contenu trouve."
@@ -228,6 +234,7 @@ class BrowseActivity : BaseActivity() {
                     "stalker" -> {
                         categories = prepareCategories(Api.stalkerCategories(pl, realKind), pl)
                         bindCategories()
+                        if (multiMode) return@launch
                         setLoading(false)
                         // v356 : le journal technique n est visible que pour un administrateur.
                         msgTv.text = if (categories.size <= 1 && Api.lastStalkerLog.isNotBlank()) {
@@ -242,6 +249,7 @@ class BrowseActivity : BaseActivity() {
                     else -> {
                         categories = prepareCategories(Api.xtreamCategories(pl, realKind), pl)
                         bindCategories()
+                        if (multiMode) return@launch
                         setLoading(false)
                         msgTv.text = if (kind == "replay") "Choisis une cat\u00e9gorie replay \u00e0 gauche." else "Choisis une categorie a gauche."
                     }
@@ -252,6 +260,7 @@ class BrowseActivity : BaseActivity() {
                 // des resultats quasi instantanes des que l'utilisateur commence a taper.
                 maybeWarmSearch()
             } catch (e: Exception) {
+                if (multiMode) return@launch
                 msgTv.text = "Erreur de chargement : ${e.message}"
                 setLoading(false)
             }
@@ -585,6 +594,16 @@ class BrowseActivity : BaseActivity() {
             toggleServer(cat.id.substring(7))
             return
         }
+        if ((kind == "movie" || kind == "series") && multiMode) {
+            multiMode = false
+            searchEpoch++
+            searchJob?.cancel()
+            if (searchEt.text.isNotEmpty()) {
+                ignoreSearchChange = true
+                searchEt.setText("")
+                ignoreSearchChange = false
+            }
+        }
         val previousCat = selectedCat
         selectedCat = cat.id
         val previousIndex = categories.indexOfFirst { it.id == previousCat }
@@ -633,11 +652,13 @@ class BrowseActivity : BaseActivity() {
                 setLoading(true)
                 lifecycleScope.launch {
                     try { items = Api.m3uItems(pl, realKind, catId) }
-                    catch (e: Exception) { msgTv.text = "Erreur : ${e.message}" }
+                    catch (e: Exception) { if (!multiMode) msgTv.text = "Erreur : ${e.message}" }
                     if (kind == "replay") items = items.filter { it.catchup }
                     applyFilter()
-                    msgTv.text = if (items.isEmpty()) "Aucun contenu trouve." else ""
-                    setLoading(false)
+                    if (!multiMode) {
+                        msgTv.text = if (items.isEmpty()) "Aucun contenu trouve." else ""
+                        setLoading(false)
+                    }
                 }
             }
             "stalker" -> { setLoading(true); lifecycleScope.launch { loadStalkerInto(catId) } }
@@ -645,11 +666,13 @@ class BrowseActivity : BaseActivity() {
                 setLoading(true)
                 lifecycleScope.launch {
                     try { items = Api.xtreamItems(pl, realKind, catId) }
-                    catch (e: Exception) { msgTv.text = "Erreur : ${e.message}" }
+                    catch (e: Exception) { if (!multiMode) msgTv.text = "Erreur : ${e.message}" }
                     if (kind == "replay") items = items.filter { it.catchup }
                     applyFilter()
-                    msgTv.text = if (items.isEmpty()) "Aucun contenu trouve." else ""
-                    setLoading(false)
+                    if (!multiMode) {
+                        msgTv.text = if (items.isEmpty()) "Aucun contenu trouve." else ""
+                        setLoading(false)
+                    }
                 }
             }
         }
@@ -670,8 +693,10 @@ class BrowseActivity : BaseActivity() {
                 val newItems = if (filterReplay) batch.filter { it.catchup } else batch
                 items = items + newItems
                 applyFilter()
-                if (!firstShown) { setLoading(false); firstShown = true }
-                msgTv.text = ""
+                if (!multiMode) {
+                    if (!firstShown) { setLoading(false); firstShown = true }
+                    msgTv.text = ""
+                }
             }
         }
         if (filterReplay && items.isEmpty()) {
@@ -683,8 +708,8 @@ class BrowseActivity : BaseActivity() {
             return
         }
         withContext(Dispatchers.Main) {
-            setLoading(false)
-            if (items.isEmpty()) msgTv.text = "Aucun contenu trouve."
+            if (!multiMode) setLoading(false)
+            if (!multiMode && items.isEmpty()) msgTv.text = "Aucun contenu trouve."
         }
     }
 
@@ -762,24 +787,17 @@ class BrowseActivity : BaseActivity() {
         setLoading(true)
         msgTv.text = ""
         searchJob = lifecycleScope.launch(Dispatchers.IO) {
-            delay(250) // anti-rebond pendant la frappe
+            delay(120) // Index local; ne relance aucun telechargement par lettre.
             if (epoch != searchEpoch) return@launch
             try {
-                Api.searchAllServers(playlists, q, kind) { done, total, merged ->
+                Api.searchAllServers(playlists, q, kind) { result ->
+                    val merged = result.items
                     withContext(Dispatchers.Main) {
                         if (!multiMode || epoch != searchEpoch) return@withContext
                         filtered = applySort(merged)
                         itemAdapter?.submit(filtered)
-                        if (merged.isNotEmpty()) {
-                            // Resultats affiches immediatement, sans texte ni spinner au milieu.
-                            setLoading(false)
-                            msgTv.text = ""
-                        } else if (done >= total) {
-                            setLoading(false)
-                            msgTv.text = "Aucun resultat pour \"$q\"."
-                        } else {
-                            msgTv.text = ""
-                        }
+                        setLoading(merged.isEmpty() && !result.finished)
+                        msgTv.text = result.message(q)
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -801,7 +819,7 @@ class BrowseActivity : BaseActivity() {
         if (didWarmSearch) return
         if (kind != "movie" && kind != "series") return
         val pls = Session.playlists
-        if (pls.size <= 1) return // un seul serveur : deja rapide, inutile de prechauffer
+        if (pls.isEmpty()) return
         didWarmSearch = true
         lifecycleScope.launch(Dispatchers.IO) {
             try { Api.prefetchCatalogs(pls, kind) } catch (e: Exception) {}

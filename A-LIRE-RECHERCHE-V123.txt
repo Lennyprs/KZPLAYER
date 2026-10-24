@@ -1,0 +1,87 @@
+KZ PLAYER 3.5.8 - V123 - RECHERCHE FILMS / SERIES MULTILISTE
+
+CE ZIP CONTIENT LE PROJET SOURCE COMPLET, PAS UN APK DEJA COMPILE.
+Base : dernier retour 3.5.6 / V122 fourni dans cette discussion.
+Le lecteur video approuve, les fichiers replay, les licences, les panels et les
+signatures sont conserves. Les replays experimentaux V121 ne sont pas retablis.
+Si tu as modifie le projet ailleurs depuis ce dernier ZIP, ne l'ecrase pas :
+il faudra fusionner avec ton projet actuel.
+
+INSTALLATION
+1. Extraire le ZIP et copier TOUT son contenu a la racine de ton depot KZPLAYER,
+   en acceptant les remplacements. Ne pas ajouter un sous-dossier de projet.
+   Inclure .github, app/src/test et tools/release. Garder les secrets GitHub existants.
+2. Executer exactement ces trois lignes dans le terminal du depot :
+
+git add app/build.gradle app/src .github/workflows/build-apk-signed.yml tools/release/next_official_version.py A-LIRE-RECHERCHE-V123.txt
+git commit -m "Corrige et accelere la recherche films dans toutes les listes - 3.5.8"
+git push
+
+3. Attendre la NOUVELLE compilation Build KZ Player APK (signed) dans Actions.
+   Elle compile le projet et execute les tests JVM avant de signer/publier l'APK.
+4. Une fois verte, recuperer app-release-signed.apk dans la nouvelle release 3.5.8.
+   Installer comme mise a jour. Ne pas desinstaller, ne pas effacer les donnees.
+   Le numero Android progresse via le workflow officiel conserve de V122.
+
+CORRECTIONS
+- Recherche dans TOUTES les listes configurees, pas seulement la liste active.
+- Memes resultats pour Classique, NewTivi et l'acces Films/Series depuis Netflix.
+- Xtream : lecture JSON en flux, indexation par lots de 256, pas de gros tableau
+  JSON complet garde en memoire. Un telechargement partage par liste et section.
+- M3U : lecture en flux, films et series indexes en une seule passe. Correction
+  des virgules dans les titres, attributs quotes/simples/non quotes, BOM/CRLF,
+  fichiers VOD sans groupe, et identification des episodes sans classer comme
+  serie un film simplement appele Episode 1.
+- MAC/Stalker : recherche native paginee, sessions isolees par liste/MAC/profil,
+  pas de reutilisation d'un jeton d'une autre liste. Alias de categorie globale.
+  Pas de parcours exhaustif de toutes les categories apres chaque lettre.
+- Index SQLite FTS4 local persistant : recherche de fragments, mots multiples,
+  accents, ligatures et titres non latins. Ne compile pas une Regex par film
+  a chaque frappe et ne jette plus les listes au-dela du cinquieme catalogue.
+- Titres exacts prioritaires et indication de la liste d'origine au clic.
+- Resultats disponibles affiches avant la fin des autres serveurs.
+- Appels de recherche annules : annulation reelle OkHttp, y compris lecture du
+  corps de reponse. Les catalogues partages ne sont pas relances par lettre.
+- Un delai depasse, une erreur HTTP, une reponse HTML ou une session refusee
+  deviennent une recherche INCOMPLETE signalee, pas un faux resultat vide.
+- Un ancien chargement de categories ne remplace plus la recherche en cours.
+- La premiere lettre ne declenche plus le chargement de Tout dans Films/Series.
+
+FONCTIONNEMENT / LIMITES HONNETES
+- Des 2 caracteres et apres 120 ms de stabilisation de la saisie, l'index local
+  est consulte. Les telechargements manquants ont lieu en parallele et les
+  nouveaux resultats apparaissent par lots.
+- Le PREMIER chargement d'une liste inconnue depend du fournisseur et du reseau.
+  Aucun client ne peut chercher instantanement des donnees jamais recues.
+- Les catalogues sont reutilises 15 minutes puis actualises en conservant les
+  resultats deja presents. Parametres > Recharger invalide la fraicheur pour
+  la prochaine recherche sans effacer les autres donnees de l'application.
+- Pour Stalker, les recherches reussies sont memorisees 5 minutes. Le portail
+  reste necessaire pour un nouveau titre jamais recherche localement.
+- Maximum 4 chargements de catalogues en parallele, plus 3 recherches natives
+  limitees. Index prive dans le cache Android, hors sauvegarde, borne a 512 Mio.
+  Un stockage plein est une erreur signalee, jamais une liste vide validee.
+- Affichage limite a 300 titres fusionnes / 350 correspondances par liste.
+  Une recherche trop large ou un portail tronque est signale : affiner le titre.
+- Ce correctif ne rend pas disponible un film absent des listes, ne contourne
+  pas les autorisations du fournisseur et ne garantit pas tous les portails
+  proprietaires. Il ne change pas le decodeur ni les parametres du lecteur.
+
+VALIDATION LOCALE
+- 37 controles Java sur les VRAIS helpers de recherche et le parseur M3U.
+- Parseur exerce avec 100000 entrees sans troncature.
+- 38 controles SQLite REELS avec le schema et les requetes de production :
+  160000 films, huit listes, fragments, isolation des listes, mises a jour,
+  suppression FTS, integrite et reouverture du cache.
+- Mesure finale : environ 1,2 ms mediane pour une requete ciblee sur ces huit
+  listes deja indexees, sur le sandbox. Ce n'est PAS une mesure sur une TV,
+  ni le temps du premier telechargement, ni une garantie pour chaque titre.
+- 79 anciens controles Java replay repasses ; lecteur et fichiers replay
+  compares octet par octet a la base V122 et conserves.
+- Tests JVM ajoutes au projet et au workflow officiel avant publication.
+- Compilation des helpers Java effectuee en Java 17. Les interfaces Android du
+  magasin Java sont simulees pour cette verification ; SQLite teste separement.
+- Pas de compilation Android/Kotlin complete ni de test sur ton compte/ta TV
+  dans ce sandbox. GitHub doit encore compiler et signer l'APK.
+
+AUCUNE MODIFICATION DU BACKEND GOOGLE OU DES PANELS CLOUDFLARE NECESSAIRE.

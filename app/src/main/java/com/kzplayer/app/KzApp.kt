@@ -22,6 +22,7 @@ class KzApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         CrashDiagnostics.install(this)
+        FastSearch.init(this)
         // v149 : initialise le resolveur DNS-over-HTTPS avec le contexte app avant
         // qu'Api.kt (ou toute autre partie de l'app) ne construise ses OkHttpClient.
         try { DohDns.init(this) } catch (_: Exception) {}

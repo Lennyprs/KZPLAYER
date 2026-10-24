@@ -177,6 +177,7 @@ class SettingsActivity : BaseActivity() {
                     Session.current = Session.playlists.firstOrNull { it.id == selectedId }
                         ?: Session.playlists.firstOrNull()
                     SessionCache.save(this@SettingsActivity)
+                    FastSearch.invalidate()
                     stateTv.text = "Listes recharg\u00e9es \u2713"
                     Toast.makeText(this@SettingsActivity, "Listes de lecture recharg\u00e9es", Toast.LENGTH_SHORT).show()
                     val plName = Session.current?.nom

@@ -78,7 +78,7 @@ jobs:
           # Le fichier app/build.gradle lit cette variable et l applique tel quel
           # (sans re-additionner) pour matcher le tag de release ci-dessous.
           VERSION_CODE: ${{ env.VERSION_CODE }}
-        run: ./gradlew clean :app:assembleRelease --no-daemon --stacktrace
+        run: ./gradlew clean :app:testReleaseUnitTest :app:assembleRelease --no-daemon --stacktrace
 
       # v420 : conserver la correspondance R8 du build exact pour diagnostiquer
       # les rapports obfusques. Pas de changement de protection ou de signature.

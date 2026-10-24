@@ -28,7 +28,7 @@ android {
             vcCode = runNum + 400
         }
         versionCode vcCode
-        versionName "3.5.6"
+        versionName "3.5.8"
     }
 
     buildFeatures { buildConfig true }
@@ -64,6 +64,7 @@ android {
 }
 
 dependencies {
+    testImplementation 'junit:junit:4.13.2'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'

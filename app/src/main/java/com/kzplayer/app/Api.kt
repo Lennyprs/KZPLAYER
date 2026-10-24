@@ -1108,6 +1108,13 @@ object Api {
 
     private var stalkerToken: String? = null
     private var stalkerBase: String? = null
+    // V123: same portal URL does not imply the same MAC/account.
+    private var stalkerOwnerKey:String?=null
+    private val searchStalkerDirty=ConcurrentHashMap<String,Boolean>()
+    private val searchStalkerEpoch=ConcurrentHashMap<String,Long>()
+    internal fun searchStalkerGeneration(pl:Playlist):Long = searchStalkerEpoch[FastSearch.key(pl,"portal")]?:0L
+    internal fun searchChangedStalkerSession(pl:Playlist) {searchStalkerDirty[FastSearch.key(pl,"portal")]=true}
+
     // Dernier diagnostic de resolution de flux (affiche dans le lecteur en cas d'echec).
     var lastStreamLog: String = ""
     var lastStalkerLog: String = ""
@@ -1356,9 +1363,13 @@ object Api {
 
     private fun ensureStalker(pl: Playlist): String? {
         val base = stalkerBase
-        if (stalkerToken.isNullOrBlank() || base == null || !base.startsWith(pl.serverUrl)) {
+        val owner=FastSearch.key(pl,"portal")
+        val renewedBySearch=searchStalkerDirty.remove(owner)==true
+        if (renewedBySearch || stalkerOwnerKey!=owner || stalkerToken.isNullOrBlank() || base == null || !base.startsWith(pl.serverUrl)) {
             stalkerToken = null; stalkerBase = null
             if (!stalkerHandshake(pl)) return null
+            stalkerOwnerKey=owner
+            searchStalkerEpoch[owner]=(searchStalkerEpoch[owner]?:0L)+1L
         }
         return stalkerBase
     }
@@ -1853,18 +1864,7 @@ object Api {
     private var m3uCache: List<Item> = emptyList()
 
     // Devine le type d'une entree M3U a partir du group-title et de l'URL.
-    private fun classifyM3u(group: String, url: String): String {
-        val g = group.lowercase()
-        val u = url.lowercase()
-        return when {
-            u.contains("/series/") || g.contains("serie") || g.contains("s\u00e9ri") ||
-                g.contains("tv show") || g.contains("shows") -> "series"
-            u.contains("/movie/") || u.contains("/movies/") || u.contains("/vod/") ||
-                g.contains("film") || g.contains("movie") || g.contains("vod") ||
-                g.contains("cinema") || g.contains("cin\u00e9") -> "movie"
-            else -> "live"
-        }
-    }
+    private fun classifyM3u(group:String,url:String,name:String=""):String = SearchM3u.classify(group,url,name)
 
     // Enleve SxxExx / "Saison x" / "Episode x" / 1x02 pour regrouper les episodes par serie.
     private fun cleanSeriesName(raw: String): String {
@@ -1976,7 +1976,7 @@ object Api {
         var summary = ""
         var ua = ""
         fun ajoute(u: String) {
-            val kind = classifyM3u(group, u)
+            val kind = classifyM3u(group, u, name)
             val catchup = group.contains("catch", true) || group.contains("replay", true) || group.contains("archive", true)
             out.add(Item(name = name.ifBlank { u }, logo = logo, kind = kind, directUrl = u, description = group, summary = summary, catchup = catchup))
             if (ua.isNotBlank()) { try { m3uUserAgents[u] = ua } catch (e: Throwable) {} }
@@ -2028,227 +2028,10 @@ object Api {
         return if (c.isLetter()) c.uppercaseChar().toString() else "#"
     }
 
-    // ---------------- RECHERCHE GLOBALE (multi-serveurs) ----------------
-    // Cache des catalogues deja telecharges (par serveur + type) pour des recherches rapides.
-    // Cache LRU borne : au plus MAX_CACHED_CATALOGS catalogues gardes en memoire a la fois.
-    // Avec beaucoup de serveurs, garder TOUS les catalogues saturait la memoire et l'appli
-    // etait tuee (retour brutal a l'accueil). On ne garde donc que les plus recents.
-    private val MAX_CACHED_CATALOGS = 5
-    private val catalogCache = java.util.Collections.synchronizedMap(
-        object : LinkedHashMap<String, List<Item>>(16, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Item>>): Boolean =
-                size > MAX_CACHED_CATALOGS
-        }
-    )
-    // Au plus 2 gros catalogues (Xtream/M3U) telecharges EN MEME TEMPS, quelle que soit
-    // l'origine (recherche ou prechargement) -> pas de saturation memoire.
-    private val catalogSem = Semaphore(2)
-
-    private suspend fun catalogFor(pl: Playlist, kind: String): List<Item> {
-        val key = "${pl.id}:$kind"
-        catalogCache[key]?.let { return it }
-        val items = catalogSem.withPermit {
-            // Re-verifie le cache : un autre appel (recherche ou prechargement) a pu le
-            // remplir pendant l'attente du permis -> on evite un double telechargement.
-            catalogCache[key] ?: try {
-                when (pl.type) {
-                    "m3u" -> m3uItems(pl, kind, "__all__")
-                    "stalker" -> stalkerCatalogAll(pl, kind)
-                    else -> xtreamItems(pl, kind, "__all__")
-                }
-            } catch (e: Exception) { emptyList() }
-        }
-        // On ne met en cache que les resultats non vides (evite de figer un echec reseau).
-        if (items.isNotEmpty()) catalogCache[key] = items
-        return items
-    }
-
-    /**
-     * Prechauffe en arriere-plan le cache des catalogues Films/Series de TOUS les serveurs.
-     * But : quand l'utilisateur tape sa recherche, tout est deja pret -> resultats quasi
-     * instantanes, meme avec beaucoup de serveurs. Borne par catalogSem (max 3 a la fois),
-     * donc aucun risque de saturation. Ne refait rien si deja en cache. Stalker est ignore
-     * (il cherche cote portail, pas besoin de precharger). 100% additif.
-     */
-    suspend fun prefetchCatalogs(playlists: List<Playlist>, kind: String) {
-        if (kind != "movie" && kind != "series") return
-        val curId = Session.current?.id
-        // Serveur courant en premier (c'est celui recherche en priorite).
-        val ordered = playlists.sortedByDescending { it.id == curId }
-        var warmed = 0
-        // SEQUENTIEL (un catalogue a la fois) + garde-memoire : le prechargement ne doit
-        // JAMAIS faire planter l'appli. On s'arrete des que la memoire se remplit.
-        for (pl in ordered) {
-            if (warmed >= MAX_CACHED_CATALOGS - 1) break // pas plus que le cache ne garde
-            if (pl.type == "stalker") continue // Stalker cherche cote portail : rien a precharger
-            val key = "${pl.id}:$kind"
-            if (catalogCache.containsKey(key)) { warmed++; continue }
-            val rt = Runtime.getRuntime()
-            if (rt.totalMemory() - rt.freeMemory() > rt.maxMemory() * 6 / 10) break
-            try { withTimeoutOrNull(15000L) { catalogFor(pl, kind) } } catch (e: Exception) {}
-            warmed++
-        }
-    }
-
-    // Stalker : le mode "tout" (*) renvoie souvent vide selon le portail.
-    // On tente d'abord *, sinon on parcourt chaque categorie (mis en cache ensuite).
-    private suspend fun stalkerCatalogAll(pl: Playlist, kind: String): List<Item> {
-        val direct = try { stalkerItems(pl, kind, "__all__") } catch (e: Exception) { emptyList() }
-        if (direct.isNotEmpty()) return direct
-        val cats = try { stalkerCategories(pl, kind) } catch (e: Exception) { emptyList() }
-        val out = ArrayList<Item>()
-        for (c in cats) {
-            if (c.id.startsWith("__")) continue
-            try { out.addAll(stalkerItems(pl, kind, c.id)) } catch (e: Exception) {}
-        }
-        return out
-    }
-
-    private fun foldText(s: String): String {
-        val noAccent = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
-            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
-        // Meme normalisation que la recherche classique (accents + ponctuation ignores).
-        return noAccent.lowercase()
-            .replace("&", " and ")
-            .replace(Regex("[^a-z0-9]+"), " ")
-            .trim()
-    }
-
-    /**
-     * Recherche multi-serveurs pour la recherche classique Films/Series.
-     * Parcourt TOUS les serveurs, fusionne les doublons par titre et renvoie
-     * (au fur et a mesure, serveur par serveur) des items prets a afficher :
-     * chaque item porte serverLabel ("Serveur 1 / Serveur 2") et ownerPlaylistId
-     * (le serveur a activer au clic). 100% additif.
-     */
+    // V123: one shared streaming index, also used by NewTivi/Netflix and voice search.
+    suspend fun prefetchCatalogs(playlists:List<Playlist>,kind:String) = FastSearch.prefetch(playlists,kind)
     suspend fun searchAllServers(
-        playlists: List<Playlist>,
-        query: String,
-        kind: String,
-        onProgress: suspend (done: Int, total: Int, merged: List<Item>) -> Unit
-    ) {
-        coroutineScope {
-            if (foldText(query.trim()).isBlank()) { onProgress(0, playlists.size, emptyList()); return@coroutineScope }
-            val groups = LinkedHashMap<String, MutableList<SearchHit>>()
-            val curId = Session.current?.id
-            val total = playlists.size
-            // Serveur courant en premier (resultats immediats), puis les autres.
-            val ordered = playlists.sortedByDescending { it.id == curId }
-            // Parallelisation : jusqu'a 5 serveurs interroges EN MEME TEMPS (recherche native
-            // Stalker + filtrage sur catalogues deja en cache = leger et rapide). La securite
-            // memoire est desormais assuree en amont par catalogSem (max 2 gros catalogues
-            // charges simultanement), donc plus de saturation meme avec beaucoup de serveurs.
-            // Chaque serveur reste limite a 8 s pour ne jamais bloquer l'affichage.
-            val sem = Semaphore(5)
-            val lock = Any()
-            var done = 0
-            val jobs = ordered.map { pl ->
-                async(Dispatchers.IO) {
-                    val items = sem.withPermit {
-                        try { withTimeoutOrNull(12000L) { searchServer(pl, query, kind) } ?: emptyList() }
-                        catch (e: Exception) { emptyList<Item>() }
-                    }
-                    // Fusion + progression sequentialisees (thread-safe) puis notification UI.
-                    val snapshot = synchronized(lock) {
-                        for (item in items) {
-                            if (item.kind == "header") continue
-                            val gkey = foldText(item.name)
-                            if (gkey.isNotBlank()) groups.getOrPut(gkey) { ArrayList() }.add(SearchHit(item, pl))
-                        }
-                        done++
-                        done to buildMerged(groups, curId)
-                    }
-                    onProgress(snapshot.first, total, snapshot.second)
-                }
-            }
-            jobs.awaitAll()
-        }
-    }
-
-    // Recherche sur UN serveur. On privilegie la recherche NATIVE du serveur
-    // (rapide + fiable) plutot que de telecharger tout le catalogue.
-    private suspend fun searchServer(pl: Playlist, query: String, kind: String): List<Item> {
-        val tokens = foldText(query).split(" ").filter { it.isNotBlank() }
-        if (tokens.isEmpty()) return emptyList()
-        return try {
-            when (pl.type) {
-                "stalker" -> {
-                    // Stalker sait chercher cote portail via le parametre search.
-                    val native = stalkerSearch(pl, kind, query)
-                    if (native.isNotEmpty()) native.filter { matchesTokens(it, tokens) }.ifEmpty { native }
-                    else catalogFor(pl, kind).filter { matchesTokens(it, tokens) } // secours rare
-                }
-                // Xtream : 1 seul appel renvoie tout le VOD/series (puis mis en cache).
-                // M3U : playlist deja en cache. On filtre localement, c'est rapide.
-                else -> catalogFor(pl, kind).filter { matchesTokens(it, tokens) }
-            }
-        } catch (e: Exception) { emptyList() }
-    }
-
-    private fun matchesTokens(item: Item, tokens: List<String>): Boolean {
-        if (item.kind == "header") return false
-        val hay = foldText(item.name + " " + item.description)
-        return tokens.all { hay.contains(it) }
-    }
-
-    // Recherche native Stalker : type+action=get_ordered_list&search=...
-    // Bornee a quelques pages pour rester rapide.
-    private suspend fun stalkerSearch(pl: Playlist, kind: String, query: String): List<Item> = withContext(Dispatchers.IO) {
-        val portal = ensureStalker(pl) ?: return@withContext emptyList()
-        val type = when (kind) { "movie" -> "vod"; "series" -> "series"; else -> "itv" }
-        val param = if (type == "itv") "genre" else "category"
-        val out = ArrayList<Item>()
-        var page = 1
-        var totalPages = 1
-        while (page <= totalPages && page <= 5) {
-            val q = "type=$type&action=get_ordered_list&$param=*&search=${enc(query)}&fav=0&sortby=number&p=$page&JsHttpRequest=1-xml"
-            val txt = stbCall(pl, portal, q)
-            try {
-                val js = JSONObject(txt).optJSONObject("js") ?: break
-                val data = js.optJSONArray("data") ?: JSONArray()
-                if (page == 1) {
-                    val total = js.optInt("total_items", data.length())
-                    val pageSize = if (data.length() > 0) data.length() else 14
-                    totalPages = if (pageSize > 0) Math.ceil(total.toDouble() / pageSize).toInt() else 1
-                    if (totalPages < 1) totalPages = 1
-                }
-                if (data.length() == 0) break
-                for (i in 0 until data.length()) {
-                    val o = data.optJSONObject(i) ?: continue
-                    val isSeries = o.optInt("is_series", 0) == 1
-                    out.add(Item(
-                        name = o.optString("name", o.optString("title")), added = parseStalkerAdded(o),
-                        logo = absLogo(portal, o.optString("logo", o.optString("screenshot_uri"))),
-                        kind = if (type == "itv") "live" else if (isSeries) "series" else "movie",
-                        cmd = o.optString("cmd"),
-                        seriesId = if (isSeries) o.optString("id") else null,
-                        description = o.optString("description")
-                    ))
-                }
-            } catch (e: Exception) { break }
-            page++
-        }
-        out
-    }
-
-    // Fusionne les hits par titre : 1 item affiche + la liste des serveurs qui l'ont.
-    private fun buildMerged(groups: Map<String, List<SearchHit>>, curId: String?): List<Item> {
-        val out = ArrayList<Item>(groups.size)
-        for ((_, hits) in groups) {
-            // On garde de preference la copie du serveur courant (clic direct sans bascule).
-            val rep = hits.firstOrNull { it.playlist.id == curId } ?: hits.first()
-            // Si le serveur courant n'a pas d'affiche pour ce titre mais qu'un autre serveur
-            // en a une, on emprunte cette affiche (sans changer le serveur utilise au clic).
-            val logo = if (rep.item.logo.isNotBlank()) rep.item.logo
-                else hits.firstOrNull { it.item.logo.isNotBlank() }?.item?.logo ?: rep.item.logo
-            val names = LinkedHashSet<String>()
-            hits.sortedByDescending { it.playlist.id == curId }.forEach { names.add(it.playlist.nom) }
-            out.add(rep.item.copy(
-                logo = logo,
-                serverLabel = names.joinToString(" / "),
-                ownerPlaylistId = rep.playlist.id
-            ))
-        }
-        return out
-    }
+        playlists:List<Playlist>,query:String,kind:String,
+        onProgress:suspend(FastSearch.Progress)->Unit
+    ) = FastSearch.search(playlists,query,kind,onProgress)
 }

@@ -60,7 +60,7 @@ abstract class NtCatalogActivity : NtBase() {
     private lateinit var glm: GridLayoutManager
     // Recherche multi-serveurs (comme le Classique) : cherche sur TOUS les serveurs ajoutes.
     private var multiMode: Boolean = false
-    private var searchEpoch: Int = 0
+    @Volatile private var searchEpoch: Int = 0
     private var searchJob: Job? = null
     private var voiceQuery: String = ""
     // Empeche le TextWatcher de relancer une recherche quand on vide le champ nous-memes.
@@ -102,6 +102,8 @@ abstract class NtCatalogActivity : NtBase() {
                 } else {
                     multiMode = false
                     searchJob?.cancel()
+                    searchEpoch++
+                    setLoading(false)
                     applyFilter()
                 }
             }
@@ -125,6 +127,7 @@ abstract class NtCatalogActivity : NtBase() {
     private fun loadCategories() {
         val pl = Session.current ?: run { msgTv.text = "Serveurs indisponibles."; return }
         setLoading(true); msgTv.text = ""
+        lifecycleScope.launch(Dispatchers.IO) { Api.prefetchCatalogs(Session.playlists, kind) }
         lifecycleScope.launch {
             try {
                 // v391 : mode multiliste (toutes les listes) aussi dans le theme NewTivi.
@@ -142,12 +145,13 @@ abstract class NtCatalogActivity : NtBase() {
                 ) + base.filter { !it.id.startsWith("__") }
                 catAdapter = CatAdapter(categories) { selectCategory(it) }
                 catRv.adapter = catAdapter
-                setLoading(false)
+                if (!multiMode) setLoading(false)
                 // Prechauffe en arriere-plan les catalogues de TOUS les serveurs (Films/Series) pour
                 // que la recherche (micro ou manuelle) trouve vraiment sur tous les serveurs, et vite.
                 if (kind == "movie" || kind == "series") {
                     lifecycleScope.launch(Dispatchers.IO) { try { Api.prefetchCatalogs(Session.playlists, kind) } catch (e: Exception) {} }
                 }
+                if (multiMode || searchEt.text.toString().trim().length >= 2) return@launch
                 if (voiceQuery.isNotBlank()) {
                     // Recherche vocale : on lance directement la recherche multi-serveurs.
                     val q = voiceQuery; voiceQuery = ""
@@ -156,7 +160,7 @@ abstract class NtCatalogActivity : NtBase() {
                     val firstReal = categories.firstOrNull { !it.id.startsWith("__") } ?: categories.firstOrNull()
                     if (firstReal != null) selectCategory(firstReal)
                 }
-            } catch (e: Exception) { setLoading(false); msgTv.text = "Erreur : ${e.message}" }
+            } catch (e: Exception) { if (!multiMode) { setLoading(false); msgTv.text = "Erreur : ${e.message}" } }
         }
     }
 
@@ -183,6 +187,7 @@ abstract class NtCatalogActivity : NtBase() {
     private fun selectCategory(cat: Category) {
         // Choisir une categorie = navigation : on quitte le mode recherche multi-serveurs.
         multiMode = false
+        searchEpoch++
         searchJob?.cancel()
         // On efface une eventuelle recherche en cours (ex. apres une recherche vocale) pour ne pas
         // filtrer la categorie choisie avec un ancien texte -> sinon "Tout" semble ne rien afficher.
@@ -214,14 +219,14 @@ abstract class NtCatalogActivity : NtBase() {
                         Api.stalkerItemsPaged(pl, kind, realCat) { batch ->
                             // On passe la reference (pas de copie complete a chaque lot) : combine a
                             // l'insertion incrementale de l'adaptateur, l'affichage reste fluide.
-                            withContext(Dispatchers.Main) { acc.addAll(batch); items = acc; applyFilter(); setLoading(false) }
+                            withContext(Dispatchers.Main) { acc.addAll(batch); items = acc; applyFilter(); if (!multiMode) setLoading(false) }
                         }
                     }
-                    "m3u" -> { items = Api.m3uItems(pl, kind, realCat); applyFilter(); setLoading(false) }
-                    else -> { items = Api.xtreamItems(pl, kind, realCat); applyFilter(); setLoading(false) }
+                    "m3u" -> { items = Api.m3uItems(pl, kind, realCat); applyFilter(); if (!multiMode) setLoading(false) }
+                    else -> { items = Api.xtreamItems(pl, kind, realCat); applyFilter(); if (!multiMode) setLoading(false) }
                 }
-                if (items.isEmpty()) msgTv.text = "Aucun contenu." else msgTv.text = ""
-            } catch (e: Exception) { setLoading(false); msgTv.text = "Erreur : ${e.message}" }
+                if (!multiMode) { if (items.isEmpty()) msgTv.text = "Aucun contenu." else msgTv.text = "" }
+            } catch (e: Exception) { if (!multiMode) { setLoading(false); msgTv.text = "Erreur : ${e.message}" } }
         }
     }
 
@@ -244,18 +249,18 @@ abstract class NtCatalogActivity : NtBase() {
         if (playlists.isEmpty()) { msgTv.text = "Aucun serveur ajoute."; return }
         setLoading(true); msgTv.text = ""
         searchJob = lifecycleScope.launch(Dispatchers.IO) {
-            delay(250) // anti-rebond pendant la frappe
+            delay(120) // Index local; ne relance aucun telechargement par lettre.
             if (epoch != searchEpoch) return@launch
             try {
-                Api.searchAllServers(playlists, q, kind) { done, total, merged ->
+                Api.searchAllServers(playlists, q, kind) { result ->
+                    val merged = result.items
                     withContext(Dispatchers.Main) {
                         if (!multiMode || epoch != searchEpoch) return@withContext
                         filtered = merged
                         itemAdapter?.submit(filtered)
                         if (!itemRv.hasFocus()) filtered.firstOrNull()?.let { updateHero(it) }
-                        if (merged.isNotEmpty()) { setLoading(false); msgTv.text = "" }
-                        else if (done >= total) { setLoading(false); msgTv.text = "Aucun resultat pour \"$q\"." }
-                        else msgTv.text = ""
+                        setLoading(merged.isEmpty() && !result.finished)
+                        msgTv.text = result.message(q)
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
