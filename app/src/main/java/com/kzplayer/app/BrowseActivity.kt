@@ -148,7 +148,6 @@ class BrowseActivity : BaseActivity() {
         })
 
         loadCategories()
-        maybeWarmSearch()
 
         // Commande vocale : "voicePlay" = lancer directement une chaine (traite apres le
         // chargement des categories, cf. maybeStartVoicePlay) ; "voiceQuery" = pre-remplir la recherche.

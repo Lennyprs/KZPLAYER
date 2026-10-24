@@ -1,0 +1,83 @@
+KZ PLAYER 3.5.9 — V124 — RECHERCHE ET CATEGORIES
+================================================
+Ce ZIP contient le projet SOURCE complet, pas un APK signe deja compile.
+Base : V123 / 3.5.8. Les methodes de categories et de classification M3U
+ont ete remises sur leur fonctionnement V122 / 3.5.6. Aucune licence,
+playlist, preference de lecture ou donnee personnelle ne doit etre effacee.
+Si votre depot a ete modifie ailleurs apres V123, fusionnez plutot que
+d'ecraser ces autres modifications.
+
+CORRECTIONS
+- Abandon du cache SQLite/FTS ajoute en 3.5.8. Il pouvait echouer en ecriture
+  sur une configuration SQLite restrictive et transformer l'echec du cache
+  en faux message de listes indisponibles. Ce mode de panne est reproduit
+  localement ; la photo seule ne prouve pas l'erreur exacte de votre TV.
+- Nouveau cache binaire prive, titres normalises compacts en memoire,
+  metadonnees sur disque, ecritures par blocs et publication recuperable.
+  Aucun SQL, aucune extension FTS, aucun declencheur de base de donnees.
+- Le dernier catalogue valide est conserve jusqu'a la fin du rafraichissement.
+  Les nouveaux lots sont consultables progressivement. Un cache corrompu
+  est reconstruit sans supprimer licences, listes ni reglages de l'application.
+- Telechargement termine et connexion fermee AVANT l'indexation : le temps
+  passe a indexer sur une TV lente ne declenche plus le delai reseau.
+- Deux telechargements de catalogues maximum, un seul par origine ;
+  l'amorcage precoce avant les categories a ete retire.
+- Recherche MAC : suppression du second moteur handshake/get_profile de V123.
+  Utilisation des appels existants du catalogue, sessions/cookies lies au compte
+  et profil de chaque liste, en-tetes captures avant les requetes. Un seul
+  renouvellement est permis sur 401/403, jamais de relance automatique sur 429.
+  Le lecteur conserve ses propres en-tetes de liste ; les sessions PHP ne sont
+  pas envoyees aux CDN par l'intermediaire des en-tetes du lecteur.
+- Les messages distinguent HTTP, connexion, DNS et cache. Les numeros de
+  liste correspondent a l'ordre des listes fourni a la recherche.
+- Integration conservee dans Classique, NewTivi et Netflix : toutes les listes.
+- PlayerActivity et tous les fichiers Replay* sont identiques a V122/V123.
+  Aucun changement des decodeurs, parametres du lecteur, backend/panels,
+  licences, credits, signatures, identite de paquet ni canal de mise a jour.
+
+LIMITES HONNETES
+- La premiere recuperation d'une nouvelle liste depend toujours du fournisseur.
+- Un portail hors ligne, une erreur 403/429 ou une recherche native non
+  implementee par un portail proprietaire ne peuvent pas etre rendus instantanes.
+- Cache prive : 512 Mio pour les fichiers de catalogue/index, plus fichiers
+  de transfert temporaires (96 Mio maximum chacun, deux transferts maximum).
+- Catalogue frais 15 min ; requetes natives memorisees 5 min ; resultat affiche
+  limite a 300 films et lecture par liste limitee a 350 correspondances.
+- Une recherche native tronquee reste indiquee comme limitee, pas exhaustive.
+- Le changement de repertoire reconstruit uniquement le cache de recherche.
+  Ne pas effacer les donnees de l'application et ne pas desinstaller.
+
+VERIFICATIONS EFFECTUEES ICI
+- Compilation et execution du vrai cache Java de production avec de vrais
+  fichiers, sans remplacer le stockage par un faux SQLite.
+- 37 methodes des tests du projet exercees localement via une interface
+  d'assertions compatible JUnit : 22 normalisation/M3U + 15 cache binaire.
+  Le vrai JUnit 4 execute ces memes tests dans le workflow GitHub.
+- 37 controles Java de normalisation et parsing M3U supplementaires,
+  comprenant une playlist synthetique de 100 000 entrees.
+- Nouveau benchmark de production : 160 000 films synthetiques / huit listes,
+  JVM limitee a 256 Mio. Requetes ciblees medianes 1,46 a 4,90 ms ;
+  reouverture du cache + requete huit listes : 48,58 ms.
+  Mesures du sandbox uniquement, PAS mesures de la TV ni du reseau fournisseur.
+- Controle des 137 XML, du perimetre des modifications et du CRC du ZIP.
+- Aucune compilation Android/Kotlin complete, signature d'APK, execution GitHub,
+  installation ni validation fournisseur/TV n'a ete effectuee ici.
+
+INSTALLATION
+1. Extraire le ZIP a la racine du depot KZPLAYER. Copier aussi .github,
+   app/src/test et tools ; ne pas toucher aux secrets de signature.
+2. Depuis le terminal ouvert dans le depot, executer exactement :
+
+git add app/build.gradle app/src .github/workflows/build-apk-signed.yml tools/release/next_official_version.py A-LIRE-RECHERCHE-V124.txt
+git commit -m "Corrige la recherche et restaure les categories des listes - 3.5.9"
+git push
+
+3. Attendre le NOUVEAU workflow de compilation signe entierement vert.
+   Les tests JVM passent avant la fabrication et publication de l'APK.
+4. Telecharger app-release-signed.apk de la NOUVELLE release 3.5.9.
+   Installer en mise a jour, sans desinstaller ni effacer les donnees.
+   Le code Android croissant et la signature existante sont conserves par CI.
+5. Reouvrir Films, ouvrir la liste dont les categories avaient disparu,
+   puis chercher Grinch. Le premier remplissage peut dependre du fournisseur.
+   En cas d'echec restant, la photo du nouveau message suffit : ne transmettez
+   aucun identifiant IPTV, mot de passe, MAC ou jeton.

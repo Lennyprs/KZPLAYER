@@ -1108,12 +1108,84 @@ object Api {
 
     private var stalkerToken: String? = null
     private var stalkerBase: String? = null
-    // V123: same portal URL does not imply the same MAC/account.
-    private var stalkerOwnerKey:String?=null
-    private val searchStalkerDirty=ConcurrentHashMap<String,Boolean>()
-    private val searchStalkerEpoch=ConcurrentHashMap<String,Long>()
-    internal fun searchStalkerGeneration(pl:Playlist):Long = searchStalkerEpoch[FastSearch.key(pl,"portal")]?:0L
-    internal fun searchChangedStalkerSession(pl:Playlist) {searchStalkerDirty[FastSearch.key(pl,"portal")]=true}
+    private var portalOwnerKey:String?=null
+    private data class PortalState(val token:String,val base:String,val profile:StbProfile,val compat:Boolean,val at:Long)
+    private val portalStates=HashMap<String,PortalState>()
+    private var portalStateAt=0L
+    private val portalHeaders=ConcurrentHashMap<String,Map<String,String>>()
+    private val portalProfiles=ConcurrentHashMap<String,StbProfile>()
+    private fun portalOwner(pl:Playlist):String = sha256Hex(pl.copy(id="",nom="",hiddenCategories=emptyList(),shownByKind=emptyMap()).toString())
+    private class SearchPortalCall {
+        @Volatile var cancelled=false
+        @Volatile var active:okhttp3.Call?=null
+        fun cancel(){cancelled=true;active?.cancel()}
+    }
+    private val searchPortalCall=ThreadLocal<SearchPortalCall>()
+    private val searchPortalExecutor=java.util.concurrent.Executors.newFixedThreadPool(3) {run -> Thread(run,"kz-portal-search").apply {isDaemon=true}}
+    private val searchPortalClient by lazy {client.newBuilder().connectTimeout(6,TimeUnit.SECONDS).readTimeout(12,TimeUnit.SECONDS).callTimeout(30,TimeUnit.SECONDS).retryOnConnectionFailure(false).build()}
+    private val portalCookieStores=ConcurrentHashMap<String,ConcurrentHashMap<String,Cookie>>()
+    private fun portalText(request:Request,pl:Playlist):String {
+        val control=searchPortalCall.get()
+        if(control?.cancelled==true)throw java.io.InterruptedIOException("RECHERCHE_ANNULEE")
+        val origin=request.url
+        val ownCookies=portalCookieStores.getOrPut(portalOwner(pl)){ConcurrentHashMap()}
+        val identity=request.header("Cookie").orEmpty().split(";").mapNotNull {Cookie.parse(origin,it.trim()+"; Path=/")}
+        val jar=object:CookieJar {
+            override fun saveFromResponse(url:HttpUrl,cookies:List<Cookie>){
+                for(c in cookies)ownCookies[c.name+"|"+c.domain+"|"+c.path]=c
+            }
+            override fun loadForRequest(url:HttpUrl):List<Cookie>{
+                if(url.host!=origin.host)return emptyList()
+                val result=LinkedHashMap<String,Cookie>()
+                for(c in cookieJar.loadForRequest(url))if(c.name in listOf("__test","cf_clearance","__cf_bm")&&c.matches(url))result[c.name]=c
+                for(c in ownCookies.values)if(c.expiresAt>System.currentTimeMillis()&&c.matches(url))result[c.name]=c
+                for(c in identity)if(c.matches(url))result[c.name]=c
+                return result.values.toList()
+            }
+        }
+        val scoped=(if(control==null)client else searchPortalClient).newBuilder().cookieJar(jar).addNetworkInterceptor {chain ->
+            val target=chain.request().url
+            val same=target.host==origin.host&&((target.scheme==origin.scheme&&target.port==origin.port)||(origin.scheme=="http"&&target.scheme=="https"&&target.port==443))
+            if(!same&&control!=null)throw java.io.IOException("REDIRECTION_REFUSEE")
+            chain.proceed(chain.request())
+        }.build()
+        val call=scoped.newCall(request);control?.active=call
+        if(control?.cancelled==true){call.cancel();throw java.io.InterruptedIOException("RECHERCHE_ANNULEE")}
+        try{return call.execute().use {response ->
+            if(control==null)return@use response.body?.string()?:""
+            if(!response.isSuccessful&&response.code !in listOf(400,404,405))throw java.io.IOException("HTTP_${response.code}")
+            val body=response.body?:throw java.io.IOException("REPONSE_VIDE")
+            val reader=body.charStream();val out=StringBuilder();val buffer=CharArray(8192)
+            while(true){val n=reader.read(buffer);if(n<0)break;if(out.length+n>2*1024*1024)throw java.io.IOException("REPONSE_TROP_GRANDE");out.append(buffer,0,n)}
+            out.toString()
+        }}finally{control?.active=null}
+    }
+    internal suspend fun searchLegacyPortal(pl:Playlist,query:String):String = kotlinx.coroutines.suspendCancellableCoroutine {cont ->
+        val control=SearchPortalCall();cont.invokeOnCancellation {control.cancel()}
+        searchPortalExecutor.execute {
+            searchPortalCall.set(control)
+            try {
+                if(control.cancelled)throw java.io.InterruptedIOException("RECHERCHE_ANNULEE")
+                fun requestPage():String {
+                    val portal=ensureStalker(pl)?:throw java.io.IOException("AUTH_PORTAIL")
+                    return stbCall(pl,portal,query)
+                }
+                val text=try{requestPage()}catch(e:java.io.IOException){
+                    if(e.message !in listOf("HTTP_401","HTTP_403"))throw e
+                    synchronized(this@Api){
+                        val owner=portalOwner(pl);portalStates.remove(owner);portalHeaders.remove(owner);portalCookieStores.remove(owner)
+                        if(portalOwnerKey==owner){stalkerToken=null;stalkerBase=null}
+                    }
+                    requestPage() // One authentication refresh only; never retry 429.
+                }
+                if(cont.isActive)cont.resumeWith(Result.success(text))
+            }catch(e:Exception){
+                val safe=if(e.message?.matches(Regex("HTTP_[0-9]{3}"))==true)e.message!! else "PORTAIL_RESEAU_OU_SESSION"
+                if(cont.isActive)cont.resumeWith(Result.failure(java.io.IOException(safe)))
+            }finally{searchPortalCall.remove()}
+        }
+    }
+    internal fun searchChallenge(url:HttpUrl,prefix:String):Boolean = isChallenge(prefix)&&solveChallenge(url,prefix)
 
     // Dernier diagnostic de resolution de flux (affiche dans le lecteur en cas d'echec).
     var lastStreamLog: String = ""
@@ -1143,7 +1215,7 @@ object Api {
 
     // En-tetes MAG a renvoyer au lecteur pour lire un flux stalker.
     // Sans eux, nginx ferme la connexion -> HTTP 444. A appeler apres create_link (token deja obtenu).
-    fun stalkerHeaders(pl: Playlist): Map<String, String> {
+    private fun buildStalkerHeaders(pl: Playlist): Map<String, String> {
         val m = LinkedHashMap<String, String>()
         // En compat, le flux est refuse avec le User-Agent MAG : on utilise celui
         // releve dans la capture reelle.
@@ -1157,16 +1229,26 @@ object Api {
         return m
     }
 
+    fun stalkerHeaders(pl:Playlist):Map<String,String> = portalHeaders[portalOwner(pl)]?.toMap()
+        ?: buildStalkerHeaders(pl).filterKeys {it!="Authorization"}
+
     private fun stbCall(pl: Playlist, portal: String, query: String): String {
-        fun applyStbHeaders(b: Request.Builder): Request.Builder {
-            b.header("User-Agent", if (stbCompat) "Mozilla/5.0 (QtEmbedded; Linux)" else currentStbProfile.ua)
-                .header("Accept", "*/*")
-                .header("Cookie", stbCookie(pl))
-                .header("X-User-Agent", "Model: ${currentStbProfile.model}; Link: WiFi")
-                .header("Referer", "${pl.serverUrl}/c/")
-            val t = stalkerToken
-            if (!t.isNullOrBlank()) b.header("Authorization", "Bearer $t")
-            for ((k, v) in stbCompatExtras(pl)) b.header(k, v)
+        val prepared=synchronized(this) {
+            val owner=portalOwner(pl)
+            val handshake=query.contains("action=handshake")
+            if(!handshake && portalOwnerKey!=owner) {
+                if(ensureStalker(pl)==null)throw java.io.IOException("AUTH_PORTAIL")
+            }
+            (if(handshake) portal else stalkerBase?:portal) to buildStalkerHeaders(pl).toMap()
+        }
+        val actualPortal=prepared.first
+        val requestHeaders=prepared.second
+
+        fun applyStbHeaders(b:Request.Builder):Request.Builder {
+            requestHeaders.forEach {(k,v)->b.header(k,v)}
+            // Same control-request identity as the original working portal calls.
+            b.header("User-Agent",if(requestHeaders["User-Agent"]=="IPTVSmartersPro") "Mozilla/5.0 (QtEmbedded; Linux)" else requestHeaders["User-Agent"]?:STB_UA)
+            b.header("Accept","*/*")
             return b
         }
 
@@ -1176,8 +1258,8 @@ object Api {
         }
 
         fun callGet(): String {
-            val b = applyStbHeaders(Request.Builder().url("$portal?$query"))
-            return try { client.newCall(b.build()).execute().use { it.body?.string() ?: "" } } catch (e: Exception) { "" }
+            val b = applyStbHeaders(Request.Builder().url("$actualPortal?$query"))
+            return try { portalText(b.build(),pl) } catch (e: Exception) { if(searchPortalCall.get()!=null)throw e else "" }
         }
 
         fun callPost(): String {
@@ -1191,8 +1273,8 @@ object Api {
                 // cmd, ver, metrics, etc. Certains portails Stalker acceptent uniquement POST.
                 form.addEncoded(k, v)
             }
-            val b = applyStbHeaders(Request.Builder().url(portal).post(form.build()))
-            return try { client.newCall(b.build()).execute().use { it.body?.string() ?: "" } } catch (e: Exception) { "" }
+            val b = applyStbHeaders(Request.Builder().url(actualPortal).post(form.build()))
+            return try { portalText(b.build(),pl) } catch (e: Exception) { if(searchPortalCall.get()!=null)throw e else "" }
         }
 
         val getTxt = callGet()
@@ -1361,16 +1443,26 @@ object Api {
         }
     }
 
-    private fun ensureStalker(pl: Playlist): String? {
-        val base = stalkerBase
-        val owner=FastSearch.key(pl,"portal")
-        val renewedBySearch=searchStalkerDirty.remove(owner)==true
-        if (renewedBySearch || stalkerOwnerKey!=owner || stalkerToken.isNullOrBlank() || base == null || !base.startsWith(pl.serverUrl)) {
-            stalkerToken = null; stalkerBase = null
-            if (!stalkerHandshake(pl)) return null
-            stalkerOwnerKey=owner
-            searchStalkerEpoch[owner]=(searchStalkerEpoch[owner]?:0L)+1L
+    @Synchronized private fun ensureStalker(pl: Playlist): String? {
+        val owner=portalOwner(pl)
+        val switched=portalOwnerKey!=owner
+        if(switched){
+            val old=portalOwnerKey;val oldToken=stalkerToken;val oldBase=stalkerBase
+            if(old!=null&&!oldToken.isNullOrBlank()&&oldBase!=null)portalStates[old]=PortalState(oldToken,oldBase,currentStbProfile,stbCompat,portalStateAt)
+            val cached=portalStates[owner]?.takeIf {System.currentTimeMillis()-it.at in 0 until 10L*60L*1000L}
+            portalOwnerKey=owner;stalkerToken=cached?.token;stalkerBase=cached?.base
+            currentStbProfile=cached?.profile?:portalProfiles[owner]?:STB_PROFILES[0]
+            if(cached!=null){stbCompat=cached.compat;portalStateAt=cached.at}
         }
+        val base=stalkerBase
+        if(stalkerToken.isNullOrBlank()||base==null||!base.startsWith(pl.serverUrl)){
+            stalkerToken=null;stalkerBase=null
+            portalStates.remove(owner)
+            try {if(!stalkerHandshake(pl))return null;portalStateAt=System.currentTimeMillis()}
+            catch(e:Exception){stalkerToken=null;stalkerBase=null;portalHeaders.remove(owner);throw e}
+        }
+        portalProfiles[owner]=currentStbProfile
+        portalHeaders[owner]=buildStalkerHeaders(pl).toMap()
         return stalkerBase
     }
 
@@ -1556,10 +1648,11 @@ object Api {
         if (first.first.isEmpty() && hasCustomStalkerProfile(pl)) {
             for (profile in STB_PROFILES) {
                 if (profile == currentStbProfile) continue
-                stalkerToken = null
-                stalkerBase = null
-                currentStbProfile = profile
-                val p2 = ensureStalker(pl) ?: continue
+                val p2 = synchronized(this@Api) {
+                    ensureStalker(pl)
+                    stalkerToken=null;stalkerBase=null;currentStbProfile=profile
+                    ensureStalker(pl)
+                } ?: continue
                 val attempt = fetchStalkerPage(pl, p2, type, param, sel, 1)
                 if (attempt.first.isNotEmpty()) {
                     activePortal = p2
@@ -1864,7 +1957,18 @@ object Api {
     private var m3uCache: List<Item> = emptyList()
 
     // Devine le type d'une entree M3U a partir du group-title et de l'URL.
-    private fun classifyM3u(group:String,url:String,name:String=""):String = SearchM3u.classify(group,url,name)
+    private fun classifyM3u(group: String, url: String): String {
+        val g = group.lowercase()
+        val u = url.lowercase()
+        return when {
+            u.contains("/series/") || g.contains("serie") || g.contains("s\u00e9ri") ||
+                g.contains("tv show") || g.contains("shows") -> "series"
+            u.contains("/movie/") || u.contains("/movies/") || u.contains("/vod/") ||
+                g.contains("film") || g.contains("movie") || g.contains("vod") ||
+                g.contains("cinema") || g.contains("cin\u00e9") -> "movie"
+            else -> "live"
+        }
+    }
 
     // Enleve SxxExx / "Saison x" / "Episode x" / 1x02 pour regrouper les episodes par serie.
     private fun cleanSeriesName(raw: String): String {
@@ -1976,7 +2080,7 @@ object Api {
         var summary = ""
         var ua = ""
         fun ajoute(u: String) {
-            val kind = classifyM3u(group, u, name)
+            val kind = classifyM3u(group, u)
             val catchup = group.contains("catch", true) || group.contains("replay", true) || group.contains("archive", true)
             out.add(Item(name = name.ifBlank { u }, logo = logo, kind = kind, directUrl = u, description = group, summary = summary, catchup = catchup))
             if (ua.isNotBlank()) { try { m3uUserAgents[u] = ua } catch (e: Throwable) {} }
@@ -2028,10 +2132,6 @@ object Api {
         return if (c.isLetter()) c.uppercaseChar().toString() else "#"
     }
 
-    // V123: one shared streaming index, also used by NewTivi/Netflix and voice search.
     suspend fun prefetchCatalogs(playlists:List<Playlist>,kind:String) = FastSearch.prefetch(playlists,kind)
-    suspend fun searchAllServers(
-        playlists:List<Playlist>,query:String,kind:String,
-        onProgress:suspend(FastSearch.Progress)->Unit
-    ) = FastSearch.search(playlists,query,kind,onProgress)
+    suspend fun searchAllServers(playlists:List<Playlist>,query:String,kind:String,onProgress:suspend(FastSearch.Progress)->Unit) = FastSearch.search(playlists,query,kind,onProgress)
 }

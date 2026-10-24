@@ -10,10 +10,10 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Persistent streaming catalogs, shared downloads, immediate local queries. */
 object FastSearch {
-    data class Progress(val items:List<Item>,val done:Int,val total:Int,val failed:Int,val pending:Int,val limited:Boolean,val finished:Boolean) {
+    data class Progress(val items:List<Item>,val done:Int,val total:Int,val failed:Int,val pending:Int,val limited:Boolean,val finished:Boolean,val issues:List<String> = emptyList()) {
         fun message(query:String):String = when {
             pending>0 -> "Recherche dans toutes les listes : $done/$total — $pending en cours" + if(failed>0) ", $failed indisponible(s)" else ""
-            failed>0 -> if(items.isEmpty()) "Recherche incomplete : $failed liste(s) indisponible(s). Reessaie ou verifie ces listes." else "Resultats partiels : $failed liste(s) indisponible(s)."
+            failed>0 -> "Recherche partielle : $failed liste(s) non interrogee(s)." + if(issues.isEmpty()) "" else "\n"+issues.take(4).joinToString(" ; ")
             limited -> "Resultats limites : precise le titre pour affiner la recherche."
             items.isEmpty() -> "Aucun resultat pour \"$query\" dans les $total liste(s)."
             else -> ""
@@ -21,7 +21,7 @@ object FastSearch {
     }
     private const val TTL=15L*60L*1000L
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
-    private val downloads=Semaphore(4)
+    private val downloads=Semaphore(2)
     private val nativeRequests=Semaphore(3)
     private val lock=Any()
     @Volatile private var generation=0L
@@ -32,9 +32,10 @@ object FastSearch {
     private class Ticket {
         @Volatile var outcome=0 // 0 pending, 1 complete, 2 unavailable, 3 truncated
         @Volatile var ended=0L
+        @Volatile var error=""
         lateinit var job:Job
     }
-    fun init(context:Context) {store=SearchCatalogStore(context.applicationContext)}
+    fun init(context:Context) {store=SearchCatalogStore(context.applicationContext);SearchTransport.init(context.applicationContext)}
     private fun hash(s:String)=MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8)).joinToString("") {"%02x".format(it)}
     internal fun key(pl:Playlist,kind:String):String = hash(pl.copy(nom="",hiddenCategories=emptyList(),shownByKind=emptyMap()).toString())+":"+kind
     private fun fresh(key:String)=System.currentTimeMillis()-store.updated(key) in 0 until TTL
@@ -63,14 +64,14 @@ object FastSearch {
         val jobKey=if(pl.type=="m3u") key(pl,"m3u-both") else requested
         synchronized(lock) {
             val previous=work[jobKey]
-            if(previous!=null && (previous.outcome==0 || (previous.outcome==2 && System.currentTimeMillis()-previous.ended<20000))) return previous
+            if(previous!=null && (previous.outcome==0 || (previous.outcome==2 && System.currentTimeMillis()-previous.ended<3000))) return previous
             if(fresh(requested)) return Ticket().apply {outcome=1;ended=System.currentTimeMillis();job=Job().apply {complete()}}
             val ticket=Ticket()
             val version=generation
             ticket.job=scope.launch(start=CoroutineStart.LAZY) {
                 try {
                     downloads.withPermit {
-                        withTimeout(45000L) {
+                        run { // Download has its own deadline; indexing must not be timed as a network request.
                             val stamp=java.util.UUID.randomUUID().toString()
                             if(pl.type=="m3u") {
                                 val movieKey=key(pl,"movie");val seriesKey=key(pl,"series")
@@ -88,8 +89,8 @@ object FastSearch {
                         }
                     }
                     ticket.outcome=1
-                } catch(e:CancellationException) {ticket.outcome=2; if(e !is TimeoutCancellationException) throw e}
-                catch(_:Exception) {ticket.outcome=2}
+                } catch(e:CancellationException) {ticket.outcome=2; ticket.error="delai depasse"; if(e !is TimeoutCancellationException) throw e}
+                catch(e:Exception) {ticket.outcome=2;ticket.error=failure(e)}
                 finally {ticket.ended=System.currentTimeMillis()}
             }
             work[jobKey]=ticket;ticket.job.start();return ticket
@@ -141,17 +142,17 @@ object FastSearch {
                 t.job=launch(Dispatchers.IO,start=CoroutineStart.LAZY) {
                     try {
                         if(cached>=0) {t.outcome=if(cached==1) 3 else 1;return@launch}
-                        if((nativeBackoff[catalogKey]?:0L)>System.currentTimeMillis()) {t.outcome=2;return@launch}
+                        if((nativeBackoff[catalogKey]?:0L)>System.currentTimeMillis()) {t.outcome=2;t.error="nouvel essai dans quelques secondes";return@launch}
                         val limited=nativeRequests.withPermit {
-                            withTimeout(18000L) {
+                            withTimeout(45000L) {
                                 val portal=portals.getOrPut(key(pl,"stalker-portal")) {SearchTransport.Portal(pl)}
                                 portal.search(kind,query) {batch -> save(version) {store.put(catalogKey,"native",batch.map(::row))}}
                             }
                         }
                         save(version) {store.completeQuery(catalogKey,query,limited)}
                         t.outcome=if(limited) 3 else 1
-                    } catch(e:CancellationException) {t.outcome=2;if(e is TimeoutCancellationException) nativeBackoff[catalogKey]=System.currentTimeMillis()+20000L else throw e}
-                    catch(_:Exception) {t.outcome=2;nativeBackoff[catalogKey]=System.currentTimeMillis()+20000L}
+                    } catch(e:CancellationException) {t.outcome=2;if(e is TimeoutCancellationException) {t.error="delai du portail depasse";nativeBackoff[catalogKey]=System.currentTimeMillis()+3000L} else throw e}
+                    catch(e:Exception) {t.outcome=2;t.error=failure(e);nativeBackoff[catalogKey]=System.currentTimeMillis()+3000L}
                     finally {t.ended=System.currentTimeMillis()}
                 }
                 t.job.start();t
@@ -166,12 +167,23 @@ object FastSearch {
             if(revision!=lastRevision||state!=lastState) {
                 val snapshot=withContext(Dispatchers.IO) {local(ordered,query,kind)}
                 onProgress(Progress(snapshot.items,done,ordered.size,failed,ordered.size-done,
-                    snapshot.limited||tickets.any {it.outcome==3},done==ordered.size))
+                    snapshot.limited||tickets.any {it.outcome==3},done==ordered.size,
+                    tickets.mapIndexedNotNull {i,t -> if(t.outcome==2) "Liste ${playlists.indexOfFirst {it.id==ordered[i].id}+1}: ${t.error.ifBlank {"connexion ou reponse invalide"}}" else null}))
                 lastRevision=revision;lastState=state
             }
             if(done==ordered.size) break
             delay(160)
         }
+    }
+    private fun failure(e:Exception):String = when {
+        e is SearchTransport.HttpFailure -> "HTTP ${e.status}"
+        e.message?.matches(Regex("HTTP_[0-9]{3}"))==true -> e.message!!.replace("_"," ")
+        e.message?.startsWith("CACHE_ESPACE")==true -> "espace de cache insuffisant"
+        e.message?.startsWith("CACHE_")==true -> "erreur du cache local"
+        e.message=="RESEAU_DNS" -> "resolution DNS"
+        e.message=="RESEAU_CONNEXION" -> "connexion au fournisseur"
+        e is TimeoutCancellationException -> "delai depasse"
+        else -> "reponse fournisseur ou session refusee"
     }
     private inline fun save(version:Long,action:()->Unit) {
         synchronized(lock) {

@@ -127,7 +127,6 @@ abstract class NtCatalogActivity : NtBase() {
     private fun loadCategories() {
         val pl = Session.current ?: run { msgTv.text = "Serveurs indisponibles."; return }
         setLoading(true); msgTv.text = ""
-        lifecycleScope.launch(Dispatchers.IO) { Api.prefetchCatalogs(Session.playlists, kind) }
         lifecycleScope.launch {
             try {
                 // v391 : mode multiliste (toutes les listes) aussi dans le theme NewTivi.
