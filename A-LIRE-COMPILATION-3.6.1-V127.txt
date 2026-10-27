@@ -1,0 +1,53 @@
+KZ PLAYER 3.6.1 — V127 — CORRECTIF DE COMPILATION
+================================================
+PATCH de trois fichiers a appliquer SUR le projet 3.6.0 V126 deja copie
+et envoye sur GitHub. Ce ZIP n'est ni un projet complet ni un APK signe.
+
+CAUSE DU BUILD ROUGE
+Les trois erreurs Kotlin dans PlayerActivity.kt viennent des references a
+rendererType : ce champ n'existe pas dans ExoPlaybackException de Media3
+1.4.1. Le message libffmpegJNI.so est un avertissement, pas la cause de
+l'arret montre dans le journal.
+
+CORRECTION
+Les trois references passent par un helper qui verifie une erreur de
+renderer et deduit le type depuis rendererFormat.sampleMimeType, avec
+MimeTypes.getTrackType. Ces API ont ete verifiees dans les sources exactes
+Media3 1.4.1. Sans format identifiable, le type reste inconnu : pas de
+reprise video forcee pour une erreur audio ou une erreur non identifiee.
+
+Les ajouts video 4K/Dolby Vision, les chaines recentes, la recherche,
+les fournisseurs, le replay, les panels et la signature sont conserves.
+Aucune mise a jour de dependance ni modification du workflow GitHub.
+Version affichee montee a 3.6.1 ; calcul monotone du versionCode conserve.
+
+INSTALLATION
+1. Extraire ce ZIP A LA RACINE DU DEPOT 3.6.0 V126.
+   Remplacer app/build.gradle et PlayerActivity.kt aux chemins fournis.
+   Ne pas supprimer le reste du projet et ne pas desinstaller l'application.
+2. Executer dans le terminal du depot :
+
+git add app/build.gradle app/src/main/java/com/kzplayer/app/PlayerActivity.kt A-LIRE-COMPILATION-3.6.1-V127.txt
+git commit -m "Corrige la compilation Media3 - 3.6.1"
+git push
+
+3. Attendre la NOUVELLE execution GitHub verte. Ce push doit relancer le
+   build sur le nouveau code ; relancer seulement l'ancien job reutilise
+   l'ancien commit et ne recupere pas cette correction.
+4. Si la compilation et la signature reussissent, installer son
+   app-release-signed.apk en mise a jour, sans desinstaller.
+
+VERIFICATIONS ET LIMITES
+- Plus aucun acces .rendererType dans les sources de production.
+- Comparaison : deux fichiers existants modifies seulement, plus ce guide.
+- Les sources des autres fonctions 3.6.0 V126 sont identiques octet pour octet.
+- API verifiees : ExoPlaybackException.type/TYPE_RENDERER/rendererFormat et
+  MimeTypes.getTrackType(String nullable), version Media3 1.4.1.
+- Controle d'integrite du ZIP effectue.
+- Pas de compilation complete Kotlin/Android locale : la prochaine CI doit
+  encore valider l'ensemble. Aucun APK signe, test TV ni lecture fournisseur
+  reelle valide ici. Corriger le build n'est pas une preuve de lecture Dolby.
+
+REFERENCES API EXACTES
+https://raw.githubusercontent.com/androidx/media/1.4.1/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/ExoPlaybackException.java
+https://raw.githubusercontent.com/androidx/media/1.4.1/libraries/common/src/main/java/androidx/media3/common/MimeTypes.java

@@ -28,7 +28,7 @@ android {
             vcCode = runNum + 400
         }
         versionCode vcCode
-        versionName "3.6.0"
+        versionName "3.6.1"
     }
 
     buildFeatures { buildConfig true }

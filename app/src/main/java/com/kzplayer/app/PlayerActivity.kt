@@ -739,7 +739,7 @@ class PlayerActivity : AppCompatActivity() {
                     return
                 }
                 if(recoverHeavyVod(error,p))return
-                val videoFailure=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.takeIf {it.rendererType==androidx.media3.common.C.TRACK_TYPE_VIDEO}
+                val videoFailure=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.takeIf {failedRendererTrackType(it)==androidx.media3.common.C.TRACK_TYPE_VIDEO}
                 val failedFormat=videoFailure?.rendererFormat?:p.videoFormat
                 val heavyDecodeProblem=videoFailure!=null&&VodVideoPolicy.decodeFailure(error.errorCodeName)&&
                     (VodVideoPolicy.heavy(failedFormat?.sampleMimeType,failedFormat?.width?:0,failedFormat?.height?:0)||intent.getIntExtra("vodRecoveryCount",0)>0)
@@ -789,7 +789,7 @@ class PlayerActivity : AppCompatActivity() {
                     // Diagnostic technique sans URL ni identifiant du fournisseur.
                     // Never expose the MAC, account path, command or playback token in a screenshot.
                     val fmt=p.videoFormat?:((error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat)
-                    val renderer=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererType
+                    val renderer=failedRendererTrackType(error)
                     val track=when(renderer){androidx.media3.common.C.TRACK_TYPE_VIDEO->"video";androidx.media3.common.C.TRACK_TYPE_AUDIO->"audio";else->"inconnue"}
                     val diag="Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\nSi aucun décodeur/piste compatible n'est disponible, une version HDR10/SDR ou un appareil compatible est nécessaire."
 
@@ -809,10 +809,20 @@ class PlayerActivity : AppCompatActivity() {
         // v413 : aucun watchdog video ne relance ou ne change le flux.
     }
 
+    // Media3 1.4.1 exposes rendererFormat, not a rendererType property.
+    // Unknown or missing formats must never be guessed to be video.
+    private fun failedRendererTrackType(error:PlaybackException):Int {
+        val exo=error as? androidx.media3.exoplayer.ExoPlaybackException
+            ?:return androidx.media3.common.C.TRACK_TYPE_UNKNOWN
+        if(exo.type!=androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER)
+            return androidx.media3.common.C.TRACK_TYPE_UNKNOWN
+        return androidx.media3.common.MimeTypes.getTrackType(exo.rendererFormat?.sampleMimeType)
+    }
+
     private fun recoverHeavyVod(error:PlaybackException,p:ExoPlayer):Boolean {
         if(isReplayMode||isLiveMode||!VodVideoPolicy.decodeFailure(error.errorCodeName))return false
         val exo=error as? androidx.media3.exoplayer.ExoPlaybackException?:return false
-        if(exo.rendererType!=androidx.media3.common.C.TRACK_TYPE_VIDEO)return false
+        if(failedRendererTrackType(exo)!=androidx.media3.common.C.TRACK_TYPE_VIDEO)return false
         val f=exo.rendererFormat?:p.videoFormat?:return false
         if(f.drmInitData!=null||(!VodVideoPolicy.heavy(f.sampleMimeType,f.width,f.height)&&intent.getIntExtra("vodRecoveryCount",0)==0))return false
         if(vodRecoveryBusy)return true
