@@ -1,0 +1,95 @@
+KZ PLAYER 3.6.2 — V128 — PRIORITE VIDEO MATERIELLE ET FENETRES D'ERREUR
+===================================================================
+PROJET SOURCE COMPLET, base 3.6.1 V127. Ce ZIP n'est pas un APK signe.
+Ne pas appliquer comme un retour a 3.5.x : les chaines recentes et tous
+les ajouts 3.6.0/3.6.1 sont inclus. Ne pas effacer les donnees de l'appli.
+
+CE QUE MONTRE LA NOUVELLE PHOTO
+Echec VIDEO, Dolby Vision / hev1.08.06, 3840 x 2076, decodeur
+c2.android.hevc.decoder, appareil Google X96Q / Android 10.
+Ce decodeur est logiciel Android. Cela ne prouve pas a lui seul que le
+boitier est incapable ou qu'un decodeur materiel adapte est disponible.
+L'autre photo montre IllegalArgumentException dans la suppression d'une
+fenetre Dialog ; l'emplacement exact obfusque ne peut pas etre attribue
+avec certitude sans le mapping de cette compilation.
+
+CORRECTION VIDEO CIBLEE
+- Pour les VOD 4K/Dolby Vision non protegees : le classement est applique
+  APRES le classement de capacites Media3, pas seulement dans le selecteur
+  MIME. Sinon Media3 peut remettre le logiciel devant le materiel.
+- Materiel completement compatible en premier ; ensuite materiel qui
+  annonce le support fonctionnel du profil mais sous-declare ses limites
+  de performance/taille ; logiciel ensuite. Les codecs materiels sans
+  support fonctionnel ne sont pas forces en premiere intention.
+- Apres echec d'un decodeur logiciel Android, autoriser un essai materiel
+  borne de la meme famille declaree par Android, meme si les capacites
+  sont sous-declarees. Pour Dolby Vision, seulement avec une couche de
+  base HEVC/AVC compatible reconnue par Media3, jamais une base inventee.
+- Au maximum deux reprises par lecture ; exclusion du codec en echec,
+  reprise de position et renouvellement du lien MAC/Stalker conserves.
+- Le correctif de profil HEVC Main10 / AVC High de V126 est conserve.
+- Full HD ordinaire, direct, replay, DRM, audio, sous-titres, buffers,
+  surfaces et gestion reseau restent sur leurs chemins existants.
+- Les renderers d'extension Media3 sont conserves ; pas de suppression
+  de l'audio FFmpeg et pas de fausse promesse de video FFmpeg 4K.
+- La fenetre d'erreur montre aussi les codecs proposes, materiel/logiciel,
+  sans URL, MAC, commande ni jeton. Elle ne declare plus le boitier
+  incompatible sur la seule base du codec logiciel en echec.
+
+FENETRE ET RAPPORT DE PLANTAGE
+- Les erreurs VOD passent par une fenetre appartenant au lecteur, fermee
+  a l'arret/destruction. La fermeture protege le cas IllegalArgumentException
+  lorsque la vue a deja ete retiree ; affichage refuse pour une activite
+  detruite, jeton de fenetre expire gere, anciens callbacks joueur ignores.
+- Retrait des dismiss explicites redondants dans les menus de choix qui
+  se ferment deja automatiquement. Le watchdog de demarrage est arrete
+  quand l'erreur finale est affichee pour ne pas relancer derriere la fenetre.
+- Le texte « KZ Player 3.4.0 » etait CODE EN DUR dans CrashDiagnostics :
+  ce n'etait pas une preuve que l'ancienne version etait installee.
+  Les NOUVEAUX rapports affichent maintenant BuildConfig.VERSION_NAME.
+  Un ancien rapport deja enregistre conserve logiquement son ancien texte.
+
+PRESERVATION
+Recherche approuvee, message de progression masque, API fournisseurs,
+chaines recentes, historique films, favoris, Replay*, panels, backend,
+licences, paquets et securite de mise a jour preserves.
+Aucun changement de dependance Media3 ni de signature/CI.
+VersionName 3.6.2 ; versionCode monotone calcule par la CI existante.
+
+VALIDATIONS EFFECTUEES
+- 67 methodes du projet executees localement avec interfaces d'assertion
+  compatibles JUnit : les 55 precedentes et 12 nouvelles regles de selection.
+- 11 controles des wrappers de production contre des interfaces Android/
+  Media3 minimales : materiel fonctionnel prioritaire, ordre Full HD/DRM/
+  secure preserve, extensions gardees, vue detachee et ancien jeton geres.
+  Ce sont des fixtures JVM, PAS des essais de fenetres sur Android reel.
+- 37 controles recherche/M3U supplementaires passes.
+- Sources de l'API Media3 1.4.1 exactes verifiees pour les signatures du
+  renderer, de la factory, des capacites et des exceptions.
+- Verification du perimetre par comparaison, XML et CRC du ZIP.
+- Pas de compilation complete Kotlin/Android locale ni d'APK signe ici.
+  Pas de test sur votre X96Q ou votre fournisseur : la CI puis le boitier
+  doivent encore valider la compilation et la lecture de ces fichiers.
+
+LIMITES HONNETES
+Prioriser le bon codec et exploiter une couche compatible ne convertit
+pas un fichier. Une piste alternative doit exister pour reduire la qualite.
+Aucun transcodage serveur, conversion generale Dolby Vision -> SDR ni
+ajout de puissance materielle n'est effectue. Les seules photos ne prouvent
+pas la cause historique de la regression ou le resultat du nouveau correctif.
+
+INSTALLATION
+1) Extraire le projet a la racine du depot, y compris .github s'il est cache.
+   Remplacer les fichiers correspondants sans supprimer le reste ni les
+   secrets de signature. Si un autre chantier a modifie ce depot depuis
+   V127, fusionner au lieu d'ecraser ces modifications independantes.
+2) Dans le terminal du depot :
+
+git add app/build.gradle app/src A-LIRE-3.6.2-V128.txt
+git commit -m "Priorise le decodage materiel et securise les erreurs lecteur - 3.6.2"
+git push
+
+3) Attendre la NOUVELLE execution GitHub verte sur ce commit. Recuperer
+   son app-release-signed.apk et installer en mise a jour, sans desinstaller.
+4) Reessayer le meme film. Le diagnostic indique le codec effectivement
+   initialise et les candidats proposes, sans exposer les identifiants IPTV.

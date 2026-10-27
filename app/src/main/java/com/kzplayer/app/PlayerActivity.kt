@@ -27,9 +27,29 @@ import kotlinx.coroutines.launch
 class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private var activeVideoDecoderName=""
+    @Volatile private var videoDecoderCandidates=""
     private var vodRecoveryBusy=false
     private var vodTrackOverrideApplied=false
     private fun videoKey(f:androidx.media3.common.Format):String="${f.id}|${f.sampleMimeType}|${f.codecs}|${f.width}x${f.height}"
+
+    private var playbackErrorDialog:PlaybackErrorDialog?=null
+    private fun closePlaybackError(){
+        val dialog=playbackErrorDialog
+        playbackErrorDialog=null
+        dialog?.dismiss()
+    }
+    private fun showPlaybackError(title:String,message:String){
+        recoveryHandler.removeCallbacks(startupWatchdog)
+        if(isFinishing||isDestroyed||!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))return
+        closePlaybackError()
+        val dialog=PlaybackErrorDialog(this)
+        dialog.setTitle(title)
+        dialog.setMessage(message)
+        dialog.setButton(android.content.DialogInterface.BUTTON_POSITIVE,"OK"){_,_->}
+        dialog.setOnDismissListener {if(playbackErrorDialog===dialog)playbackErrorDialog=null}
+        playbackErrorDialog=dialog
+        dialog.show()
+    }
 
     private lateinit var playerView: PlayerView
     private var candidates: List<String> = emptyList()
@@ -501,7 +521,7 @@ class PlayerActivity : AppCompatActivity() {
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
         // Android choisit le decodeur adapte au firmware, avec repli natif si
         // l initialisation echoue. FFmpeg reste uniquement un secours audio.
-        val renderersFactory = (if(isVod&&!isReplayMode) VodRenderersFactory(this) else androidx.media3.exoplayer.DefaultRenderersFactory(this))
+        val renderersFactory = (if(isVod&&!isReplayMode) VodRenderersFactory(this){description->videoDecoderCandidates=description} else androidx.media3.exoplayer.DefaultRenderersFactory(this))
             .setEnableDecoderFallback(true)
             // v413 : evite le gel MediaCodec "premiere frame + son uniquement"
             // observe sur certains boitiers avec la file asynchrone Android.
@@ -698,6 +718,7 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if(isFinishing||isDestroyed||player!==p)return
                 if (isReplayMode) {
                     val replayDetail = replayFailureDetail(error, error.errorCodeName)
                     val replayTrace = rememberReplayFailure(replayDetail)
@@ -788,16 +809,12 @@ class PlayerActivity : AppCompatActivity() {
                     }
                     // Diagnostic technique sans URL ni identifiant du fournisseur.
                     // Never expose the MAC, account path, command or playback token in a screenshot.
-                    val fmt=p.videoFormat?:((error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat)
+                    val fmt=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat?:p.videoFormat
                     val renderer=failedRendererTrackType(error)
                     val track=when(renderer){androidx.media3.common.C.TRACK_TYPE_VIDEO->"video";androidx.media3.common.C.TRACK_TYPE_AUDIO->"audio";else->"inconnue"}
-                    val diag="Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\nSi aucun décodeur/piste compatible n'est disponible, une version HDR10/SDR ou un appareil compatible est nécessaire."
+                    val diag="Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\nDisponibles : ${videoDecoderCandidates.ifBlank {"non communiques"}}\n\nLes décodeurs disponibles et les pistes alternatives ont été essayés dans la limite des reprises. Ce diagnostic ne prouve pas que le boîtier est incompatible. Aucun transcodage vidéo n'a été effectué."
 
-                    androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
-                        .setTitle("Lecture impossible : $detail")
-                        .setMessage(diag)
-                        .setPositiveButton("OK") { d, _ -> d.dismiss() }
-                        .show()
+                    showPlaybackError("Lecture impossible : $detail",diag)
                 }
             }
         })
@@ -843,7 +860,8 @@ class PlayerActivity : AppCompatActivity() {
                 val mime=f.sampleMimeType?:return false
                 val codecs=androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT.getDecoderInfos(mime,false,false)+
                     (if(base!=null)androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT.getDecoderInfos(base,false,false)else emptyList())
-                codecs.any {it.name !in rejected&&it.hardwareAccelerated&&it.isFormatSupported(f)}
+                codecs.any {it.name !in rejected&&it.hardwareAccelerated&&
+                    (it.isFormatSupported(f)||it.isFormatFunctionallySupported(f)||VodVideoPolicy.hardwareProbe(failed,f.sampleMimeType,base,it.codecMimeType))}
             }catch(_:Exception){false}
             if(!available)return false
             intent.removeExtra("vodRecoveryTrack")
@@ -866,9 +884,7 @@ class PlayerActivity : AppCompatActivity() {
             val fresh=if(owner?.type=="stalker"&&watchSourceCmd.isNotBlank())try{Api.stalkerLink(owner,watchSourceCmd,"movie")}catch(_:Exception){null}else watchUrl
             if(fresh.isNullOrBlank()){
                 vodRecoveryBusy=false
-                androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity).setTitle("Lecture impossible")
-                    .setMessage("Le portail n'a pas renouvelé le lien du film. Réessaie depuis sa fiche.")
-                    .setPositiveButton("OK"){d,_->d.dismiss()}.show()
+                showPlaybackError("Lecture impossible","Le portail n'a pas renouvelé le lien du film. Réessaie depuis sa fiche.")
             }else {intent.putExtra("url",fresh);recreate()}
         }
         return true
@@ -1058,8 +1074,7 @@ class PlayerActivity : AppCompatActivity() {
         val items = arrayOf("Audio", "Sous-titres")
         androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_KZ_Dialog)
             .setTitle("Param\u00e8tres")
-            .setItems(items) { d, which ->
-                d.dismiss()
+            .setItems(items) { _, which ->
                 if (which == 0) showAudioMenu() else showSubtitleMenu()
             }
             .show()
@@ -1085,7 +1100,7 @@ class PlayerActivity : AppCompatActivity() {
         }
         androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_KZ_Dialog)
             .setTitle("Audio")
-            .setItems(labels.toTypedArray()) { d, which -> actions[which](); d.dismiss() }
+            .setItems(labels.toTypedArray()) { _, which -> actions[which]() }
             .show()
     }
 
@@ -1108,7 +1123,7 @@ class PlayerActivity : AppCompatActivity() {
         labels.add("Chercher en ligne\u2026"); actions.add { searchSubtitlesOnline() }
         androidx.appcompat.app.AlertDialog.Builder(this, R.style.Theme_KZ_Dialog)
             .setTitle("Sous-titres")
-            .setItems(labels.toTypedArray()) { d, which -> actions[which](); d.dismiss() }
+            .setItems(labels.toTypedArray()) { _, which -> actions[which]() }
             .show()
     }
 
@@ -1141,7 +1156,7 @@ class PlayerActivity : AppCompatActivity() {
             val labels = results.map { "${langName(it.lang)}  \u2014  ${it.release.take(45)}" }.toTypedArray()
             androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity, R.style.Theme_KZ_Dialog)
                 .setTitle("Choisir la langue")
-                .setItems(labels) { d, which -> applyOnlineSubtitle(results[which]); d.dismiss() }
+                .setItems(labels) { _, which -> applyOnlineSubtitle(results[which]) }
                 .show()
         }
     }
@@ -1385,12 +1400,14 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        closePlaybackError()
         saveWatchProgress()
         super.onStop()
         player?.pause()
     }
 
     override fun onDestroy() {
+        closePlaybackError()
         recoveryHandler.removeCallbacksAndMessages(null)
         barHandler.removeCallbacksAndMessages(null)
         saveWatchProgress()
