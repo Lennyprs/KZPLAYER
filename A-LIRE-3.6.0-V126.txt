@@ -1,0 +1,88 @@
+KZ PLAYER 3.6.0 — V126 — VIDEO 4K/DOLBY VISION ET CHAINES RECENTES
+================================================================
+Projet SOURCE complet, base 3.5.10 / V125. Ce ZIP n'est pas un APK signe.
+Si votre depot a ete modifie dans une autre discussion depuis V125,
+fusionnez les changements plutot que d'ecraser ces autres modifications.
+
+1. VIDEO : CORRECTIONS CIBLEES
+- Le chemin normal du direct et du replay est conserve. Les reglages du
+  lecteur, le mode synchrone approuve, les buffers et les extensions audio
+  sont conserves. Aucun changement de dependance Media3/FFmpeg.
+- Pour les VOD Dolby Vision, lorsque Media3 utilise une couche de base
+  compatible HEVC/H.264, le profil passe au codec est corrige en
+  HEVC Main10 / AVC High au lieu du masque de profil Dolby Vision.
+  Un vrai decodeur Dolby Vision natif n'est pas modifie.
+- Apres un echec VIDEO sur une VOD lourde, au maximum deux reprises :
+  autre piste video compatible si le fichier en contient, sinon autre
+  decodeur materiel disponible et annonce compatible. Le decodeur en
+  echec est exclu pour cette tentative seulement, pas dans les preferences.
+- Aucune tentative de faire decoder de la 4K par l'extension FFmpeg audio.
+  Pas de faux changement d'extension d'URL presente comme un transcodage.
+- Les liens MAC/Stalker sont renouveles avec la commande d'origine
+  avant une reprise ; l'URL signee du fournisseur n'est pas alteree.
+  La position de lecture est conservee et n'est pas reportee sur l'episode
+  suivant. Les nouvelles reprises ne concernent ni le live ni le replay.
+- Le diagnostic final indique piste, format, resolution, decodeur et modele
+  d'appareil, sans afficher MAC, commande, compte ou jeton dans la fenetre.
+
+IMPORTANT : le code de l'erreur sur les photos ne donne pas le profil
+exact du fichier, le decodeur qui echoue ou les capacites du boitier.
+Les correctifs traitent des chemins identifies dans le code ; ils ne
+prouvent pas encore la lecture de ces deux films sur votre appareil.
+Un fichier sans couche compatible reconnue et sans decodeur Dolby Vision
+adapte peut toujours exiger un appareil compatible ou une autre version
+HDR10/SDR du film. Il n'y a pas de conversion Dolby Vision vers SDR ni
+de transcodage serveur dans cette version.
+
+2. CHAINES : VU RECEMMENT
+- Categorie « Vu recemment » dans Classique et NewTivi TV ; rangee locale
+  du meme nom dans la presentation Netflix lorsqu'elle contient des chaines.
+- Enregistrement des le clic de lecture, y compris l'apercu, sans attendre
+  une duree minimale ; simple selection EPG du Guide sans lecture exclue.
+- Derniere chaine cliquee en premier, doublons remplaces, 80 entrees maximum.
+- Stockage local prive persistant, separe des films/series : aucun historique
+  de film, favori ou progres de lecture n'est efface pour ajouter les chaines.
+- Mode simple : uniquement la liste active ; mode multiliste : toutes les
+  listes configurees, nom de provenance et retour au bon fournisseur.
+- Les identifiants identiques sur deux listes restent distincts ; le zapping
+  entre listes reconstruit le lecteur/en-tetes du bon compte.
+- Les URL temporaires MAC ne sont pas sauvegardees a la place des commandes
+  source. Les User-Agent M3U particuliers sont conserves.
+- Un changement de compte/source sous le meme identifiant de liste ne rend
+  pas les anciennes entrees accessibles a la nouvelle source.
+
+3. PRESERVATION ET VERIFICATIONS
+- Moteur de recherche approuve et message de progression masque : inchanges.
+- Api, recherche, historique films/series, favoris, fichiers Replay*, backend,
+  panels, branding, paquet et signature : inchanges par comparaison de fichiers.
+- 55 methodes de tests du projet executees localement via une interface
+  d'assertions compatible JUnit : 37 tests deja presents + 18 tests de
+  politique video et d'identite des chaines. JUnit 4 reel les execute en CI.
+- 37 controles Java supplementaires de recherche/M3U passes, dont une
+  playlist synthetique de 100 000 entrees.
+- Adaptateur Java compile localement contre des interfaces Android/Media3
+  minimales, verifiees avec l'API 1.4.1 : cela n'est PAS une compilation
+  Android complete ni un test de decodage video reel.
+- 137 XML valides et controle du perimetre/CRC du ZIP.
+- Pas de compilation Kotlin/Android complete, signature, execution GitHub,
+  installation, test TV/fournisseur ou test HDR/Dolby Vision reel ici.
+  Ces validations restent a effectuer sur GitHub puis sur l'appareil.
+
+4. INSTALLATION
+1) Extraire le ZIP a la racine du depot. Remplacer les fichiers du projet
+   et conserver le dossier cache .github et les tests app/src/test.
+   Ne pas supprimer de secret de signature ni effacer les donnees de l'appli.
+2) Dans le terminal du depot, executer exactement :
+
+git add app/build.gradle app/src A-LIRE-3.6.0-V126.txt
+git commit -m "Passe en 3.6.0 : compatibilite video et chaines vues recemment"
+git push
+
+3) Attendre la NOUVELLE compilation GitHub verte, puis recuperer son
+   app-release-signed.apk / release affichee 3.6.0.
+   Installer comme mise a jour, sans desinstaller.
+4) Tester les films 4K/Dolby Vision signales. Si un echec subsiste, envoyer
+   la photo du NOUVEAU diagnostic (format/decodeur/appareil, pas de codes IPTV).
+5) Cliquer deux chaines, ouvrir « Vu recemment », puis fermer/reouvrir
+   l'application pour verifier leur conservation. En multiliste, tester
+   une chaine de chaque fournisseur et un retour via l'historique.

@@ -108,6 +108,9 @@ open class NewGuideActivity : NtBase() {
     override fun onStop() { super.onStop(); inlinePlayer?.release(); inlinePlayer = null }
     override fun onStart() {
         super.onStart()
+        if(selectedCat=="__recent__"){channels=LiveHistory.recentItems(this);bindChannels()}
+        val previous=playingItem
+        if(previous!=null&&previous.ownerPlaylistId.isNotBlank()&&previous.ownerPlaylistId!=Session.current?.id){playingUrl="";playingItem=null}
         if (playsInline && inlinePlayer == null && playingUrl.isNotBlank()) {
             heroImg.visibility = View.INVISIBLE; heroPlayer?.visibility = View.VISIBLE; buildAndPlay(playingUrl)
         }
@@ -128,7 +131,7 @@ open class NewGuideActivity : NtBase() {
                     else -> Api.xtreamCategories(pl, "live")
                 }
                 if (!multiLists) CategorySync.report(this@NewGuideActivity, pl, "live", base)
-                categories = listOf(Category("__favorites__", "Favoris")) + base.filter { !it.id.startsWith("__") }
+                categories = listOf(Category("__favorites__", "Favoris"), Category("__recent__", "Vu récemment")) + base.filter { !it.id.startsWith("__") }
                 catAdapter = CatAdapter(categories) { selectCategory(it) }
                 catRv.adapter = catAdapter
                 setLoading(false)
@@ -180,6 +183,11 @@ open class NewGuideActivity : NtBase() {
         if (prevIdx >= 0) catAdapter?.notifyItemChanged(prevIdx)
         if (newIdx >= 0 && newIdx != prevIdx) catAdapter?.notifyItemChanged(newIdx)
         val pl = Session.current ?: return
+        if(cat.id=="__recent__"){
+            channels=LiveHistory.recentItems(this);bindChannels();setLoading(false)
+            msgTv.text=if(channels.isEmpty())"Aucune chaîne vue récemment." else ""
+            return
+        }
         if (cat.id == "__favorites__") {
             channels = Favorites.forKind(this, "live")
             bindChannels()
@@ -335,6 +343,8 @@ open class NewGuideActivity : NtBase() {
             }
             return
         }
+        LiveHistory.activateOwner(item)
+        LiveHistory.touch(this,item)
         // 2e clic sur la chaine deja en lecture -> plein ecran
         if (isPlayingSame(item) && playingUrl.isNotBlank()) {
             openFullscreen(item.name, playingUrl, item.logo); return
@@ -356,12 +366,13 @@ open class NewGuideActivity : NtBase() {
     }
 
     private fun route(item: Item, url: String) {
+        ZapList.set(channels,item)
         if (playsInline) startInline(item, url) else openPreview(url, item)
     }
 
     private fun isPlayingSame(item: Item): Boolean {
         val cur = playingItem ?: return false
-        return (item.streamId ?: item.name) == (cur.streamId ?: cur.name)
+        return item.ownerPlaylistId==cur.ownerPlaylistId && (item.streamId ?: item.name) == (cur.streamId ?: cur.name)
     }
 
     private fun startInline(item: Item, url: String) {
@@ -484,7 +495,7 @@ open class NewGuideActivity : NtBase() {
         override fun onBindViewHolder(holder: VH, position: Int) {
             val item = data[position]
             val isPlaying = isPlayingSame(item) && playingUrl.isNotBlank()
-            holder.name.text = (if (isPlaying) "\u25b6 " else "") + item.name
+            holder.name.text = (if (isPlaying) "\u25b6 " else "") + item.name + if(item.serverLabel.isBlank()) "" else "  ·  "+item.serverLabel
             holder.number.text = (position + 1).toString()
             val q = when {
                 Regex("(?i)(4k|uhd|2160)").containsMatchIn(item.name) -> "4K"
@@ -497,7 +508,7 @@ open class NewGuideActivity : NtBase() {
             holder.nowBadge.visibility = View.GONE
             holder.logo.load(item.logo) { crossfade(false); placeholder(R.drawable.bg_tile); error(R.drawable.ic_live_tv) }
             holder.progRow.removeAllViews()
-            holder.boundStream = item.streamId ?: item.name
+            holder.boundStream = item.ownerPlaylistId+":"+(item.streamId ?: item.name)
             holder.v.setOnClickListener { playChannel(item) }
             holder.v.setOnFocusChangeListener { _, hasFocus ->
                 holder.v.animate().scaleX(if (hasFocus) 1.01f else 1f).scaleY(if (hasFocus) 1.01f else 1f).setDuration(80).start()
@@ -507,7 +518,7 @@ open class NewGuideActivity : NtBase() {
             // -> quand on redescend depuis le lecteur reduit, on tombe sur la bonne chaine.
             holder.v.isFocusable = true
             holder.v.isFocusableInTouchMode = false
-            val pl = Session.current ?: return
+            val pl = Session.playlists.firstOrNull {it.id==item.ownerPlaylistId} ?: Session.current ?: return
             val key = holder.boundStream
             lifecycleScope.launch {
                 val epg = epgFor(pl, item)

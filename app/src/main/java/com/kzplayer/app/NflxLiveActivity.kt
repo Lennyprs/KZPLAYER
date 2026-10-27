@@ -10,6 +10,8 @@ open class NflxLiveActivity : NflxCatalogActivity() {
     override val screenTitle = "TV en direct"
     override val landscape = true
     override fun onCardClick(item: Item) {
+        LiveHistory.activateOwner(item)
+        LiveHistory.touch(this,item)
         // v353 : on zappe dans la rangee (categorie) d ou vient la chaine cliquee.
         val rowChans = lastRowItems.filter { it.kind == "live" || it.kind == "channel" }
         val chans = if (rowChans.size > 1) rowChans else allLoadedItems().filter { it.kind == "live" || it.kind == "channel" }

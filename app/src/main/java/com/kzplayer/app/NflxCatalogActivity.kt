@@ -56,6 +56,16 @@ abstract class NflxCatalogActivity : NtBase() {
         ensureSession { loadCategories() }
     }
 
+    override fun onResume(){
+        super.onResume()
+        if(kind=="live"&&rowsAdapter!=null){
+            rows.removeAll {it.title=="Vu récemment"}
+            val recent=LiveHistory.recentItems(this)
+            if(recent.isNotEmpty())rows.add(0,Row("Vu récemment",recent.take(maxPerRow)))
+            allItems.clear();rows.forEach {allItems.addAll(it.items)}
+            rowsAdapter?.notifyDataSetChanged()
+        }
+    }
     override fun onDestroy() {
         loadJob?.cancel()
         super.onDestroy()
@@ -67,6 +77,7 @@ abstract class NflxCatalogActivity : NtBase() {
 
     // Rangees locales (instantanees, sans reseau) : reprise de lecture + favoris.
     private fun addLocalRows() {
+        if(kind=="live"){val recent=LiveHistory.recentItems(this);if(recent.isNotEmpty())addRow("Vu récemment",recent.take(maxPerRow))}
         if (kind == "movie" || kind == "series") {
             val cont = try { WatchHistory.recentItems(this, kind) } catch (e: Exception) { emptyList() }
             if (cont.isNotEmpty()) addRow("Continuer \u00e0 regarder", cont.take(maxPerRow))

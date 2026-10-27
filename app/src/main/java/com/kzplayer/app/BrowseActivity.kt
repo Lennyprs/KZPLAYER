@@ -371,7 +371,7 @@ class BrowseActivity : BaseActivity() {
         if (kind == "movie" || kind == "series") {
             return listOf(Category("__favorites__", "Favoris"), Category("__recent__", "Vu r\u00e9cemment")) + base
         }
-        if (kind == "live") return listOf(Category("__favorites__", "Favoris")) + base
+        if (kind == "live") return listOf(Category("__favorites__", "Favoris"), Category("__recent__", "Vu récemment")) + base
         return base
     }
 
@@ -639,7 +639,7 @@ class BrowseActivity : BaseActivity() {
             return
         }
         if (cat.id == "__recent__") {
-            items = WatchHistory.recentItems(this, kind)
+            items = if(kind=="live") LiveHistory.recentItems(this) else WatchHistory.recentItems(this, kind)
             applyFilter()
             msgTv.text = if (items.isEmpty()) "Aucun contenu vu r\u00e9cemment." else ""
             setLoading(false)
@@ -733,7 +733,7 @@ class BrowseActivity : BaseActivity() {
             }
         }
         val hasHeaders = list.any { it.kind == "header" }
-        if (!hasHeaders) {
+        if (!hasHeaders && !(kind=="live"&&selectedCat=="__recent__")) {
             list = when (sortMode) {
                 1 -> list.sortedBy { it.name.lowercase() }
                 2 -> list.sortedByDescending { it.added }
@@ -913,6 +913,7 @@ class BrowseActivity : BaseActivity() {
             startActivity(DetailActivity.intentFor(this, item))
             return
         }
+        if(item.kind=="live"||item.kind=="channel") LiveHistory.touch(this,item)
         val plCur = Session.current
         if (plCur != null && plCur.type == "stalker") {
             val cmd = item.cmd
@@ -1035,6 +1036,7 @@ class BrowseActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        if(kind=="live"&&selectedCat=="__recent__"){items=LiveHistory.recentItems(this);applyFilter()}
         if (filtered.isNotEmpty() && currentFocus == null) keepFocusOnItems()
     }
 

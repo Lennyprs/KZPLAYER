@@ -26,6 +26,11 @@ import kotlinx.coroutines.launch
 
 class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
+    private var activeVideoDecoderName=""
+    private var vodRecoveryBusy=false
+    private var vodTrackOverrideApplied=false
+    private fun videoKey(f:androidx.media3.common.Format):String="${f.id}|${f.sampleMimeType}|${f.codecs}|${f.width}x${f.height}"
+
     private lateinit var playerView: PlayerView
     private var candidates: List<String> = emptyList()
     private var isReplayMode = false
@@ -379,6 +384,10 @@ class PlayerActivity : AppCompatActivity() {
             // Live : la barre du haut (titre + X) s'affiche puis disparait toute seule apres 4 s.
             showTopBarTemporarily()
         }
+        if(isLiveMode&&!isReplayMode){
+            val original=Session.zapChannels.getOrNull(Session.zapIndex)
+            if(original!=null&&original.name==watchTitle)LiveHistory.touch(this,original)
+        }
         if (watchKind == "movie" || watchKind == "series") {
             WatchHistory.touch(this, watchUrl, watchTitle, watchLogo, watchKind, watchSeriesName, watchSeriesLogo, watchSeriesId, watchSeriesCmd, watchSourceCmd, watchSourceStreamId, watchSourceContainerExt)
         }
@@ -492,7 +501,7 @@ class PlayerActivity : AppCompatActivity() {
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
         // Android choisit le decodeur adapte au firmware, avec repli natif si
         // l initialisation echoue. FFmpeg reste uniquement un secours audio.
-        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
+        val renderersFactory = (if(isVod&&!isReplayMode) VodRenderersFactory(this) else androidx.media3.exoplayer.DefaultRenderersFactory(this))
             .setEnableDecoderFallback(true)
             // v413 : evite le gel MediaCodec "premiere frame + son uniquement"
             // observe sur certains boitiers avec la file asynchrone Android.
@@ -511,6 +520,19 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
+        // Only a failed heavy VOD opts into codec exclusion/base-layer recovery.
+        if(isVod&&!isReplayMode&&intent.getIntExtra("vodRecoveryCount",0)>0){
+            val rejected=intent.getStringArrayListExtra("vodRejectedDecoders").orEmpty().toSet()
+            val base=intent.getStringExtra("vodCompatibleBase").orEmpty()
+            renderersFactory.setMediaCodecSelector {mime,secure,tunneled ->
+                val native=androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT.getDecoderInfos(mime,secure,tunneled)
+                if(!mime.startsWith("video/"))native else {
+                    val compatible=if(mime==androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION&&base.isNotBlank())
+                        androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT.getDecoderInfos(base,secure,tunneled) else emptyList()
+                    (compatible+native).distinctBy {it.name+"|"+it.codecMimeType}.filter {it.name !in rejected&&it.hardwareAccelerated}
+                }
+            }
+        }
         val playerBuilder = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             // v388 : empeche le boitier / telephone de mettre le Wi-Fi en veille pendant
@@ -538,6 +560,9 @@ class PlayerActivity : AppCompatActivity() {
         }
         playerBuilder.setLoadControl(loadControl)
         val p = playerBuilder.build()
+        p.addAnalyticsListener(object:androidx.media3.exoplayer.analytics.AnalyticsListener {
+            override fun onVideoDecoderInitialized(eventTime:androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,decoderName:String,initializedTimestampMs:Long,initializationDurationMs:Long){activeVideoDecoderName=decoderName}
+        })
         // Correction audio VOD/series : on force un vrai flux MEDIA + volume max.
         // Certains boitiers Android TV lancent la video mais ne prennent pas le focus audio
         // correctement si les attributs ne sont pas explicites.
@@ -578,6 +603,12 @@ class PlayerActivity : AppCompatActivity() {
                 )
                 .build()
         } catch (e: Throwable) {}
+        if(isVod&&!isReplayMode&&intent.getStringExtra("vodRecoveryTrack").orEmpty().isNotBlank()){
+            val mime=intent.getStringExtra("vodRecoveryTrackMime").orEmpty()
+            val width=intent.getIntExtra("vodRecoveryTrackWidth",Int.MAX_VALUE).coerceAtLeast(1)
+            val height=intent.getIntExtra("vodRecoveryTrackHeight",Int.MAX_VALUE).coerceAtLeast(1)
+            if(mime.isNotBlank())p.trackSelectionParameters=p.trackSelectionParameters.buildUpon().setPreferredVideoMimeTypes(mime).setMaxVideoSize(width,height).build()
+        }
         player = p
         playerView.player = p
         playerView.keepScreenOn = true
@@ -609,6 +640,16 @@ class PlayerActivity : AppCompatActivity() {
             .coerceIn(0, candidates.lastIndex.coerceAtLeast(0)) else 0
         p.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                val target=intent.getStringExtra("vodRecoveryTrack").orEmpty()
+                if(!isLiveMode&&!isReplayMode&&!vodTrackOverrideApplied&&target.isNotBlank()){
+                    for(g in tracks.groups)if(g.type==androidx.media3.common.C.TRACK_TYPE_VIDEO)for(i in 0 until g.length){
+                        if(g.isTrackSupported(i)&&videoKey(g.getTrackFormat(i))==target){
+                            vodTrackOverrideApplied=true
+                            p.trackSelectionParameters=p.trackSelectionParameters.buildUpon().setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup,i)).build()
+                        }
+                    }
+                }
+
                 // Film/serie sans son : il y a des pistes audio mais aucune n'est selectionnee.
                 // On relache la limite de canaux (une seule fois) pour qu'une piste soit choisie
                 // -> retablit le son sans changer le comportement des fichiers qui ont deja du son.
@@ -697,7 +738,12 @@ class PlayerActivity : AppCompatActivity() {
                         .show()
                     return
                 }
-                if (candIdx < candidates.size - 1) {
+                if(recoverHeavyVod(error,p))return
+                val videoFailure=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.takeIf {it.rendererType==androidx.media3.common.C.TRACK_TYPE_VIDEO}
+                val failedFormat=videoFailure?.rendererFormat?:p.videoFormat
+                val heavyDecodeProblem=videoFailure!=null&&VodVideoPolicy.decodeFailure(error.errorCodeName)&&
+                    (VodVideoPolicy.heavy(failedFormat?.sampleMimeType,failedFormat?.width?:0,failedFormat?.height?:0)||intent.getIntExtra("vodRecoveryCount",0)>0)
+                if (candIdx < candidates.size - 1 && !heavyDecodeProblem) {
                     candIdx++
                     playCurrent()
                 } else if (isLiveMode) {
@@ -740,14 +786,16 @@ class PlayerActivity : AppCompatActivity() {
                             }
                         }
                     }
-                    val u = candidates.getOrNull(candIdx) ?: ""
-                    // Fenetre lisible (au lieu d'un toast fugace) avec le diagnostic complet :
-                    // l'utilisateur peut lire / photographier l'URL exacte et la reponse du serveur.
-                    val diag = if (Session.current?.type == "stalker" && Api.lastStreamLog.isNotBlank())
-                        "\n\n--- Diagnostic ---\n${Api.lastStreamLog}" else ""
+                    // Diagnostic technique sans URL ni identifiant du fournisseur.
+                    // Never expose the MAC, account path, command or playback token in a screenshot.
+                    val fmt=p.videoFormat?:((error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat)
+                    val renderer=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererType
+                    val track=when(renderer){androidx.media3.common.C.TRACK_TYPE_VIDEO->"video";androidx.media3.common.C.TRACK_TYPE_AUDIO->"audio";else->"inconnue"}
+                    val diag="Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\nSi aucun décodeur/piste compatible n'est disponible, une version HDR10/SDR ou un appareil compatible est nécessaire."
+
                     androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
                         .setTitle("Lecture impossible : $detail")
-                        .setMessage("$u$diag")
+                        .setMessage(diag)
                         .setPositiveButton("OK") { d, _ -> d.dismiss() }
                         .show()
                 }
@@ -759,6 +807,61 @@ class PlayerActivity : AppCompatActivity() {
         // v389 : surveillance du demarrage (rond de chargement sans fin).
         if (!isReplayMode) recoveryHandler.postDelayed(startupWatchdog, 9000)
         // v413 : aucun watchdog video ne relance ou ne change le flux.
+    }
+
+    private fun recoverHeavyVod(error:PlaybackException,p:ExoPlayer):Boolean {
+        if(isReplayMode||isLiveMode||!VodVideoPolicy.decodeFailure(error.errorCodeName))return false
+        val exo=error as? androidx.media3.exoplayer.ExoPlaybackException?:return false
+        if(exo.rendererType!=androidx.media3.common.C.TRACK_TYPE_VIDEO)return false
+        val f=exo.rendererFormat?:p.videoFormat?:return false
+        if(f.drmInitData!=null||(!VodVideoPolicy.heavy(f.sampleMimeType,f.width,f.height)&&intent.getIntExtra("vodRecoveryCount",0)==0))return false
+        if(vodRecoveryBusy)return true
+        val count=intent.getIntExtra("vodRecoveryCount",0)
+        if(count>=2)return false
+        val rejected=intent.getStringArrayListExtra("vodRejectedDecoders")?:arrayListOf<String>()
+        val failed=generateSequence(error as Throwable){it.cause}.filterIsInstance<androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException>().firstOrNull()?.codecInfo?.name?:activeVideoDecoderName
+        val alternate=ArrayList<androidx.media3.common.Format>()
+        if(count==0)for(g in p.currentTracks.groups)if(g.type==androidx.media3.common.C.TRACK_TYPE_VIDEO)for(i in 0 until g.length){
+            val candidate=g.getTrackFormat(i)
+            if(g.isTrackSupported(i)&&videoKey(candidate)!=videoKey(f))alternate.add(candidate)
+        }
+        val track=alternate.sortedWith(compareBy<androidx.media3.common.Format> {if(it.sampleMimeType==androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION)1 else 0}.thenBy {if(it.width in 1..1920)0 else 1}).firstOrNull()
+        val base=androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getAlternativeCodecMimeType(f)
+        if(track==null){
+            if(failed.isNotBlank()&&failed !in rejected)rejected.add(failed)
+            val available=try{
+                val mime=f.sampleMimeType?:return false
+                val codecs=androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT.getDecoderInfos(mime,false,false)+
+                    (if(base!=null)androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT.getDecoderInfos(base,false,false)else emptyList())
+                codecs.any {it.name !in rejected&&it.hardwareAccelerated&&it.isFormatSupported(f)}
+            }catch(_:Exception){false}
+            if(!available)return false
+            intent.removeExtra("vodRecoveryTrack")
+        }else {
+            intent.putExtra("vodRecoveryTrack",videoKey(track)).putExtra("vodRecoveryTrackMime",track.sampleMimeType)
+                .putExtra("vodRecoveryTrackWidth",if(track.width>0)track.width else Int.MAX_VALUE)
+                .putExtra("vodRecoveryTrackHeight",if(track.height>0)track.height else Int.MAX_VALUE)
+        }
+        intent.putExtra("vodRecoveryCount",count+1)
+        intent.putStringArrayListExtra("vodRejectedDecoders",rejected)
+        intent.putExtra("vodCompatibleBase",base)
+        intent.putExtra("vodRecoveryPosition",p.currentPosition.coerceAtLeast(0L))
+        vodRecoveryBusy=true
+        recoveryHandler.removeCallbacks(startupWatchdog)
+        saveWatchProgress()
+        p.release();player=null;playerView.player=null
+        val owner=Session.current
+        lifecycleScope.launch {
+            // Portal URLs can be single-use: obtain a fresh link, never change the signed URL.
+            val fresh=if(owner?.type=="stalker"&&watchSourceCmd.isNotBlank())try{Api.stalkerLink(owner,watchSourceCmd,"movie")}catch(_:Exception){null}else watchUrl
+            if(fresh.isNullOrBlank()){
+                vodRecoveryBusy=false
+                androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity).setTitle("Lecture impossible")
+                    .setMessage("Le portail n'a pas renouvelé le lien du film. Réessaie depuis sa fiche.")
+                    .setPositiveButton("OK"){d,_->d.dismiss()}.show()
+            }else {intent.putExtra("url",fresh);recreate()}
+        }
+        return true
     }
 
     private fun playCurrent() {
@@ -774,6 +877,7 @@ class PlayerActivity : AppCompatActivity() {
         // On laisse ExoPlayer auto-detecter le format (extension + Content-Type + redirections).
         // Forcer le MIME pouvait casser un .ts qui redirige en realite vers du HLS.
         p.setMediaItem(buildMediaItem(u))
+        if(!isReplayMode&&!isLiveMode){val resume=intent.getLongExtra("vodRecoveryPosition",0L);if(resume>0L){p.seekTo(resume);didRestorePosition=true}}
         if (isReplayMode) {
             val resume = intent.getLongExtra("replayResumeMs", 0L)
             if (resume > 0L) p.seekTo(resume)
@@ -827,6 +931,22 @@ class PlayerActivity : AppCompatActivity() {
         if (newIdx == idx && chans.size == 1) return
         val next = chans[newIdx]
         Session.zapIndex = newIdx
+        val previousOwner=Session.current?.id
+        LiveHistory.activateOwner(next)
+        LiveHistory.touch(this,next)
+        if(Session.current?.id!=previousOwner){
+            val owner=Session.current?:return
+            zapEnCours=true
+            lifecycleScope.launch {
+                val link=if(owner.type=="stalker"&&!next.cmd.isNullOrBlank())try{Api.stalkerLink(owner,next.cmd!!,"live")}catch(_:Exception){null}else next.directUrl
+                if(!link.isNullOrBlank()){
+                    intent.putExtra("url",link).putExtra("title",next.name).putExtra("logo",next.logo)
+                        .putExtra("historySourceCmd",next.cmd.orEmpty()).putExtra("historySourceStreamId",next.streamId.orEmpty())
+                    recreate()
+                }else zapEnCours=false
+            }
+            return
+        }
         val pl = Session.current
         // Petit toast facultatif : titre de la chaine visee, dispo sur toutes les tv.
         try { Toast.makeText(this, next.name, Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
@@ -872,6 +992,13 @@ class PlayerActivity : AppCompatActivity() {
 
     // Bascule le lecteur en cours sur un nouveau flux VOD (episode suivant) sans recreer l'activite.
     private fun switchToVod(url: String, title: String, logo: String) {
+        val hadVideoRecovery=intent.getIntExtra("vodRecoveryCount",0)>0
+        intent.removeExtra("vodRecoveryPosition")
+        intent.removeExtra("vodRecoveryTrack")
+        intent.removeExtra("vodRecoveryCount")
+        vodTrackOverrideApplied=false
+        if(hadVideoRecovery&&player!=null)player!!.trackSelectionParameters=player!!.trackSelectionParameters.buildUpon().clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_VIDEO).setMaxVideoSize(Int.MAX_VALUE,Int.MAX_VALUE).setPreferredVideoMimeTypes(androidx.media3.common.MimeTypes.VIDEO_H265,androidx.media3.common.MimeTypes.VIDEO_H264).build()
+
         val p = player ?: return
         watchUrl = url
         watchTitle = title

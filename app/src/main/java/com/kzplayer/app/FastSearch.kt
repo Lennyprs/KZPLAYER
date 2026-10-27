@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 object FastSearch {
     data class Progress(val items:List<Item>,val done:Int,val total:Int,val failed:Int,val pending:Int,val limited:Boolean,val finished:Boolean,val issues:List<String> = emptyList()) {
         fun message(query:String):String = when {
-            pending>0 -> "Recherche dans toutes les listes : $done/$total — $pending en cours" + if(failed>0) ", $failed indisponible(s)" else ""
+            pending>0 -> "" // Progression silencieuse : les resultats continuent a arriver.
             failed>0 -> "Recherche partielle : $failed liste(s) non interrogee(s)." + if(issues.isEmpty()) "" else "\n"+issues.take(4).joinToString(" ; ")
             limited -> "Resultats limites : precise le titre pour affiner la recherche."
             items.isEmpty() -> "Aucun resultat pour \"$query\" dans les $total liste(s)."

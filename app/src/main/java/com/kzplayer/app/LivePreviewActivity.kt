@@ -235,6 +235,8 @@ class LivePreviewActivity : BaseActivity() {
     }
 
     private fun playChannel(item: Item) {
+        LiveHistory.activateOwner(item)
+        LiveHistory.touch(this,item)
         title = item.name
         titleTv.text = title
         streamId = item.streamId ?: ""
