@@ -115,6 +115,11 @@ abstract class NtCatalogActivity : NtBase() {
         ensureSession { loadCategories() }
     }
 
+    override fun onResume(){
+        super.onResume()
+        if((kind=="movie"||kind=="series")&&::progress.isInitialized&&categories.isEmpty()&&progress.visibility!=View.VISIBLE&&!multiMode)ensureSession {loadCategories()}
+    }
+
     private fun setLoading(b: Boolean) { progress.visibility = if (b) View.VISIBLE else View.GONE }
 
     private fun computeSpan(): Int {
@@ -131,12 +136,8 @@ abstract class NtCatalogActivity : NtBase() {
             try {
                 // v391 : mode multiliste (toutes les listes) aussi dans le theme NewTivi.
                 val multiLists = MultiListPref.isAll(this@NtCatalogActivity) && Session.playlists.size > 1
-                val base = if (multiLists) catsAllLists() else when (pl.type) {
-                    "m3u" -> Api.m3uCategories(pl, kind)
-                    "stalker" -> Api.stalkerCategories(pl, kind)
-                    else -> Api.xtreamCategories(pl, kind)
-                }
-                if (!multiLists) CategorySync.report(this@NtCatalogActivity, pl, kind, base)
+                val base = if (multiLists) catsAllLists() else VodCategories.load(this@NtCatalogActivity, pl, kind)
+                if (!multiLists) VodCategories.report(this@NtCatalogActivity, pl, kind, base)
                 categories = listOf(
                     Category("__favorites__", "Favoris"),
                     Category("__recent__", "Vu r\u00e9cemment"),
@@ -168,13 +169,9 @@ abstract class NtCatalogActivity : NtBase() {
         val out = ArrayList<Category>()
         for (p in Session.playlists) {
             val cats = try {
-                when (p.type) {
-                    "m3u" -> Api.m3uCategories(p, kind)
-                    "stalker" -> Api.stalkerCategories(p, kind)
-                    else -> Api.xtreamCategories(p, kind)
-                }
+                VodCategories.load(this@NtCatalogActivity, p, kind)
             } catch (e: Exception) { emptyList<Category>() }
-            CategorySync.report(this@NtCatalogActivity, p, kind, cats)
+            VodCategories.report(this@NtCatalogActivity, p, kind, cats)
             for (c in cats) {
                 if (c.id.startsWith("__")) continue
                 out.add(Category(c.id + "@@" + p.id, c.name + "   -   " + p.nom))

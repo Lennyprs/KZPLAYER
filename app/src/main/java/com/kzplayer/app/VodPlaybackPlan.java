@@ -12,9 +12,10 @@ public final class VodPlaybackPlan {
   String t=title.toUpperCase(Locale.ROOT);
   return t.matches(".*(?:^|[^A-Z0-9])(?:4K|UHD|2160P?|DV)(?:[^A-Z0-9]|$).*")||t.contains("DOLBY VISION")||t.contains("DOLBYVISION")||t.contains("HDR");
  }
- public static int first(boolean knownHeavy){return knownHeavy?1:0;}
- public static int next(int mode,boolean heavy){return mode>=0&&mode<2?mode+1:mode==2&&!heavy?3:-1;}
+ public static int first(boolean knownHeavy){return 0;}
+ public static int next(int mode,boolean heavy){return heavy?(mode==0?1:-1):(mode>=0&&mode<3?mode+1:-1);}
  public static boolean texture(int mode){return mode==1||mode==2;}
+ public static boolean texture(int mode,boolean heavy){return !heavy&&texture(mode);}
  public static String[] options(int mode){
   switch(mode){
    case 0:return new String[0]; // setHWDecoderEnabled handles device-specific codec defaults.

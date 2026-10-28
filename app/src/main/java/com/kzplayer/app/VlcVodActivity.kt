@@ -18,6 +18,7 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.DataSpec
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -39,6 +40,9 @@ class VlcVodActivity : AppCompatActivity() {
     private val health=VodFrameHealth(6000L,6000L,4000L)
     private var mode=0
     private var busy=false
+    private var retiring=false
+    private var recoveryPending=false
+    private var playbackOwner:Playlist?=null
     private var generation=0
     private var shouldPlay=true
     private var foreground=false
@@ -55,19 +59,18 @@ class VlcVodActivity : AppCompatActivity() {
     private var everOpened=false
     private var sourceUrl=""
     private var lastSave=0L
+    private var lastPlaybackTime=0L
     private var advancing=false
     @Volatile private var upstreamStatus=0
     private val mediaTitle get()=intent.getStringExtra("title").orEmpty()
     private val kind get()=intent.getStringExtra("historyKind").orEmpty()
     private val ownerId get()=intent.getStringExtra("vlcOwnerPlaylistId").orEmpty()
     private fun extra(key:String)=intent.getStringExtra(key).orEmpty()
-    private fun ownerReady():Boolean {
-        if(ownerId.isBlank())return true
-        val owner=Session.playlists.firstOrNull {it.id==ownerId}?:return false
-        Session.current=owner;return true
-    }
+    private fun ownerReady():Boolean=ownerId.isBlank()||playbackOwner?.id==ownerId
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
+        if(Session.playlists.isEmpty())SessionCache.restore(this)
+        playbackOwner=if(ownerId.isBlank())Session.current else Session.playlists.firstOrNull {it.id==ownerId}
         if((!intent.getBooleanExtra("vlcPrimary",false)&&!intent.getBooleanExtra("vlcFallback",false))||kind !in listOf("movie","series")||!ownerReady()){finish();return}
         sourceUrl=extra("url")
         resumeMs=savedInstanceState?.getLong("position")?:intent.getLongExtra("vlcResumeMs",0L)
@@ -75,7 +78,7 @@ class VlcVodActivity : AppCompatActivity() {
         heavy=true // Unknown geometry is not permission to force software decoding of a possible 4K file.
         mode=(savedInstanceState?.getInt("mode")?:VodPlaybackPlan.first(declaredHeavy)).coerceIn(0,3)
         shouldPlay=savedInstanceState?.getBoolean("wantsPlay")?:true
-        if(heavy&&mode==3)mode=2
+        if(heavy&&mode>1)mode=1
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         setContentView(R.layout.activity_player)
@@ -109,18 +112,21 @@ class VlcVodActivity : AppCompatActivity() {
         playerView.isFocusable=true;playerView.isFocusableInTouchMode=true;playerView.requestFocus()
         playerView.findViewById<View?>(androidx.media3.ui.R.id.exo_settings)?.setOnClickListener {settings()}
     }
-    override fun onStart(){super.onStart();if(!isFinishing&&engine==null&&!busy)openAttempt(everOpened)}
-    override fun onResume(){super.onResume();foreground=true;LicenseEnforcer.resume(this);if(shouldPlay&&ready)engine?.play();health.reset()}
+    override fun onStart(){super.onStart();if(!isFinishing&&engine==null&&!busy&&!retiring)openAttempt(everOpened)}
+    override fun onResume(){super.onResume();foreground=true;LicenseEnforcer.resume(this);if(shouldPlay&&ready)engine?.play();if(engine==null&&!busy&&!retiring&&!failed&&!isFinishing)openAttempt(everOpened);health.reset()}
     override fun onPause(){foreground=false;LicenseEnforcer.pause(this);saveProgress();engine?.pause();health.reset();super.onPause()}
     override fun onStop(){generation++;busy=false;saveProgress();dispose();dialog?.dismiss();dialog=null;super.onStop()}
     override fun onDestroy(){handler.removeCallbacksAndMessages(null);dispose();if(::controller.isInitialized){playerView.player=null;controller.release()};super.onDestroy()}
     override fun onSaveInstanceState(out:Bundle){out.putLong("position",engine?.getTime()?.takeIf {it>0}?:resumeMs);out.putInt("mode",mode);out.putBoolean("wantsPlay",shouldPlay);super.onSaveInstanceState(out)}
     private fun openAttempt(renew:Boolean){
-        if(busy||isFinishing||isDestroyed||!ownerReady())return
+        if(busy||retiring||isFinishing||isDestroyed||!ownerReady())return
         busy=true;failed=false;ready=false;buffering=true;ended=false;health.reset();controller.refresh()
         val token=++generation
         lifecycleScope.launch {
-            val pl=Session.current
+            val released=withTimeoutOrNull(8000L){VlcReleaseQueue.awaitIdle();true}?:false
+            if(token!=generation||isFinishing||isDestroyed)return@launch
+            if(!released){busy=false;fail("Le décodeur précédent ne s'est pas arrêté. Aucun nouveau décodeur n'a été lancé en parallèle.");return@launch}
+            val pl=playbackOwner
             val url=if(renew&&pl?.type=="stalker"&&extra("historySourceCmd").isNotBlank())try{Api.stalkerLink(pl,extra("historySourceCmd"),"movie")}catch(_:Exception){null}else sourceUrl
             if(token!=generation||isFinishing||isDestroyed)return@launch
             busy=false
@@ -131,7 +137,7 @@ class VlcVodActivity : AppCompatActivity() {
                 val options=arrayListOf("--quiet","--no-video-title-show","--stats")
                 val library=LibVLC(this@VlcVodActivity,options);vlc=library
                 val p=MediaPlayer(library);engine=p
-                p.attachViews(video,null,true,VodPlaybackPlan.texture(mode))
+                p.attachViews(video,null,true,VodPlaybackPlan.texture(mode,heavy))
                 val uri=if(VlcStreamBridge.network(url)){val proxy=makeBridge(url);bridge=proxy;Uri.parse(proxy.localUrl())}else Uri.parse(url)
                 val media=if(uri.scheme=="content"){
                     val fd=contentResolver.openFileDescriptor(uri,"r")?:throw java.io.IOException("Local file unavailable")
@@ -152,8 +158,12 @@ class VlcVodActivity : AppCompatActivity() {
                         MediaPlayer.Event.Playing->{ready=true;buffering=false;if(!shouldPlay||!foreground)p.pause();p.setRate(speed)}
                         MediaPlayer.Event.Paused->{/* Preserve the user's requested state across lifecycle pauses. */}
                         MediaPlayer.Event.Buffering->{buffering=event.getBuffering()<100f;if(buffering)health.reset()}
-                        MediaPlayer.Event.EncounteredError->{retryPath();return@runOnUiThread}
-                        MediaPlayer.Event.EndReached->{ended=true;saveProgress(true);nextEpisode()}
+                        MediaPlayer.Event.EncounteredError->{requestRecovery();return@runOnUiThread}
+                        MediaPlayer.Event.EndReached->{
+                            val duration=p.getLength();val position=maxOf(p.getTime(),lastPlaybackTime)
+                            if((duration>0&&duration-position>5000)||(duration<=0&&position<3000)){requestRecovery();return@runOnUiThread}
+                            ended=true;saveProgress(true);nextEpisode()
+                        }
                     }
                     controller.refresh()
                 }}
@@ -163,7 +173,7 @@ class VlcVodActivity : AppCompatActivity() {
         }
     }
     private fun makeBridge(root:String):VlcStreamBridge {
-        val pl=Session.current
+        val pl=playbackOwner
         val ua=Api.m3uUserAgents[root]?.takeIf {it.isNotBlank()}?:if(pl?.type=="stalker")Api.stalkerHeaders(pl)["User-Agent"]?:"VLC/3.0.20" else "VLC/3.0.20"
         val headers=if(pl?.type=="stalker"&&VlcStreamBridge.sameOrigin(pl.serverUrl,root))try{Api.stalkerHeaders(pl).filterKeys {!it.equals("User-Agent",true)}}catch(_:Exception){emptyMap()}else emptyMap()
         return VlcStreamBridge(root,VlcStreamBridge.Opener {url,offset,length->
@@ -188,6 +198,7 @@ class VlcVodActivity : AppCompatActivity() {
         override fun run(){
             val p=engine?:return
             val now=android.os.SystemClock.elapsedRealtime();val length=p.getLength();val time=p.getTime().coerceAtLeast(0L)
+            lastPlaybackTime=time
             if(!seekApplied&&length>0&&p.isSeekable){seekApplied=true;if(resumeMs>0)seekTo(resumeMs.coerceAtMost(length-1))}
             if(now-lastSave>5000){saveProgress();lastSave=now}
             val stats=activeMedia?.getStats()
@@ -197,24 +208,33 @@ class VlcVodActivity : AppCompatActivity() {
             val nearEnd=length>0&&length-time<2000
             val action=health.sample(now,foreground&&shouldPlay&&!ended&&!nearEnd,buffering,now<graceUntil,
                 stats?.displayedPictures?.toLong()?:-1L,stats?.lostPictures?.toLong()?:0L,time,fps)
-            if(action!=VodFrameHealth.OK){retryPath();return}
+            if(action!=VodFrameHealth.OK){requestRecovery();return}
             controller.refresh();handler.postDelayed(this,500)
         }
     }
-    private fun retryPath(){
-        if(busy||isFinishing||isDestroyed||failed)return
-        resumeMs=engine?.getTime()?.takeIf {it>0}?:resumeMs
-        saveProgress();dispose()
-        if(upstreamStatus>=400){fail("Le serveur refuse le flux (HTTP $upstreamStatus).");return}
-        val next=VodPlaybackPlan.next(mode,heavy)
-        if(next<0){fail("Les chemins de lecture disponibles n'ont pas fourni une image stable pour ce fichier. Aucune nouvelle reprise automatique.");return}
-        mode=next;openAttempt(true)
+    private fun requestRecovery(){
+        if(recoveryPending||retiring||busy||failed||isFinishing||isDestroyed)return
+        recoveryPending=true
+        val requestedGeneration=generation;val requestedPlayer=engine
+        // Do not destroy/recreate the engine from inside its event callback.
+        handler.post {
+            recoveryPending=false
+            if(generation!=requestedGeneration||engine!==requestedPlayer)return@post
+            if(retiring||busy||failed||!foreground||isFinishing||isDestroyed)return@post
+            resumeMs=engine?.getTime()?.takeIf {it>0}?:resumeMs
+            saveProgress()
+            if(upstreamStatus>=400){fail("Le serveur refuse le flux (HTTP $upstreamStatus).");return@post}
+            val next=VodPlaybackPlan.next(mode,heavy)
+            if(next<0){fail("Aucune image stable n'a été obtenue. La lecture est arrêtée sans quitter automatiquement cet écran.");return@post}
+            mode=next;ready=false;buffering=true;busy=true;controller.refresh()
+            dispose()
+        }
     }
     private fun setPlaying(value:Boolean){
         shouldPlay=value;health.reset();graceUntil=android.os.SystemClock.elapsedRealtime()+1500
         val p=engine
         if(p!=null){if(value&&foreground)p.play()else p.pause()}
-        else if(value&&!busy&&!failed)openAttempt(everOpened)
+        else if(value&&!busy&&!retiring&&!failed)openAttempt(everOpened)
     }
     private fun seekTo(position:Long){
         val p=engine?:return;val length=p.getLength();if(length<=0||!p.isSeekable)return
@@ -281,14 +301,14 @@ class VlcVodActivity : AppCompatActivity() {
         val p=engine?:return;val length=p.getLength();val position=if(completed&&length>0)length else p.getTime()
         if(position>0||seekApplied)resumeMs=position.coerceAtLeast(0L)
         if(position<3000||length<=0||!ownerReady())return
-        WatchHistory.save(this,sourceUrl,mediaTitle,extra("logo"),kind,position,length,extra("seriesName"),extra("seriesLogo"),extra("seriesId"),extra("seriesCmd"),extra("historySourceCmd"),extra("historySourceStreamId"),extra("historySourceContainerExt"))
+        WatchHistory.save(this,sourceUrl,mediaTitle,extra("logo"),kind,position,length,extra("seriesName"),extra("seriesLogo"),extra("seriesId"),extra("seriesCmd"),extra("historySourceCmd"),extra("historySourceStreamId"),extra("historySourceContainerExt"),ownerPlaylistId=playbackOwner?.id)
     }
     private fun nextEpisode(){
         if(kind!="series"||advancing)return
         val index=Session.episodeIndex+1;val next=Session.episodeQueue.getOrNull(index)?:return
         advancing=true
         lifecycleScope.launch {
-            val pl=Session.current
+            val pl=playbackOwner
             val url=next.directUrl?.takeIf {it.isNotBlank()}?:if(pl!=null&&!next.cmd.isNullOrBlank())try{Api.stalkerLink(pl,next.cmd!!,"movie")}catch(_:Exception){null}else null
             if(url.isNullOrBlank()||isFinishing||isDestroyed){advancing=false;return@launch}
             Session.episodeIndex=index
@@ -303,16 +323,22 @@ class VlcVodActivity : AppCompatActivity() {
         if(isFinishing||isDestroyed)return
         failed=true;ready=false;buffering=false;dispose();controller.refresh();playerView.showController()
         val d=PlaybackErrorDialog(this);d.setTitle("Lecture impossible");d.setMessage(message)
-        d.setButton(android.content.DialogInterface.BUTTON_POSITIVE,"Retour"){_,_->finish()};d.setOnCancelListener {finish()};dialog?.dismiss();dialog=d;d.show()
+        d.setButton(android.content.DialogInterface.BUTTON_POSITIVE,"Retour"){_,_->finish()};d.setCancelable(false);d.setCanceledOnTouchOutside(false);dialog?.dismiss();dialog=d;d.show()
     }
     private fun dispose(){
-        handler.removeCallbacks(tick);health.reset()
+        handler.removeCallbacks(tick);health.reset();generation++
         val p=engine;engine=null
-        try{bridge?.close()}catch(_:Exception){};bridge=null
-        if(p!=null){p.setEventListener(null);try{p.stop()}catch(_:Exception){};try{p.detachViews()}catch(_:Exception){};try{p.release()}catch(_:Exception){}}
-        try{activeMedia?.release()}catch(_:Exception){};activeMedia=null
-        try{descriptor?.close()}catch(_:Exception){};descriptor=null
-        try{vlc?.release()}catch(_:Exception){};vlc=null
+        val media=activeMedia;activeMedia=null
+        val library=vlc;vlc=null
+        val fd=descriptor;descriptor=null
+        val proxy=bridge;bridge=null
+        if(p==null&&media==null&&library==null&&fd==null&&proxy==null)return
+        retiring=true
+        p?.setEventListener(null)
+        VlcReleaseQueue.release(p,media,library,fd,proxy){
+            retiring=false;busy=false
+            if(foreground&&!failed&&!isFinishing&&!isDestroyed&&engine==null)openAttempt(everOpened)
+        }
     }
     override fun onKeyDown(code:Int,event:KeyEvent):Boolean {
         if(!::playerView.isInitialized)return super.onKeyDown(code,event)

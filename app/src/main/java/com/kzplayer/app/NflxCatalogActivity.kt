@@ -58,6 +58,7 @@ abstract class NflxCatalogActivity : NtBase() {
 
     override fun onResume(){
         super.onResume()
+        if((kind=="movie"||kind=="series")&&rows.isEmpty()&&progress.visibility!=View.VISIBLE&&loadJob?.isActive!=true)ensureSession {loadCategories()}
         if(kind=="live"&&rowsAdapter!=null){
             rows.removeAll {it.title=="Vu récemment"}
             val recent=LiveHistory.recentItems(this)
@@ -95,12 +96,8 @@ abstract class NflxCatalogActivity : NtBase() {
         msgTv.text = ""
         loadJob = lifecycleScope.launch {
             try {
-                val base = when (pl.type) {
-                    "m3u" -> Api.m3uCategories(pl, kind)
-                    "stalker" -> Api.stalkerCategories(pl, kind)
-                    else -> Api.xtreamCategories(pl, kind)
-                }
-                CategorySync.report(this@NflxCatalogActivity, pl, kind, base)
+                val base = VodCategories.load(this@NflxCatalogActivity, pl, kind)
+                VodCategories.report(this@NflxCatalogActivity, pl, kind, base)
                 val realCats = base.filter { !it.id.startsWith("__") }.take(maxRows)
                 setLoading(false)
                 if (realCats.isEmpty() && rows.isEmpty()) {

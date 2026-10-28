@@ -228,12 +228,13 @@ object WatchHistory {
         seriesCmd: String = "",
         sourceCmd: String = "",
         sourceStreamId: String = "",
-        sourceContainerExt: String = ""
+        sourceContainerExt: String = "",
+        ownerPlaylistId: String? = null
     ) {
         if (url.isBlank() || title.isBlank()) return
         val now = System.currentTimeMillis()
         // v394 : on estampille l entree avec la liste active au moment de la lecture.
-        val plId = Session.current?.id ?: ""
+        val plId = ownerPlaylistId ?: Session.current?.id.orEmpty()
         val existing = readAll(ctx).filter { it.url != url && !(it.kind == kind && it.title == title) }.toMutableList()
         existing.add(0, Entry(url, title, logo, kind, positionMs.coerceAtLeast(0L), durationMs.coerceAtLeast(0L), now, seriesName, seriesLogo, seriesId, seriesCmd, sourceCmd, sourceStreamId, sourceContainerExt, plId))
         val arr = JSONArray()

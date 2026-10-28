@@ -11,7 +11,7 @@ public class VlcPrimaryTest {
  @Test public void trailersRemainSeparate(){assertFalse(VodPlaybackPlan.useVlc(false,"trailer","vod"));}
  @Test public void unknownLiveEntryRemainsInExo(){assertFalse(VodPlaybackPlan.useVlc(false,null,"live"));}
  @Test public void normalFullHdKeepsTheNormalSurface(){assertEquals(0,VodPlaybackPlan.first(false));assertFalse(VodPlaybackPlan.texture(0));}
- @Test public void knownHeavyFileAvoidsThePreviouslyFailingInitialOutput(){assertEquals(1,VodPlaybackPlan.first(true));assertTrue(VodPlaybackPlan.texture(1));}
+ @Test public void knownHeavyFileUsesTheHdrSurface(){assertEquals(0,VodPlaybackPlan.first(true));assertFalse(VodPlaybackPlan.texture(0,true));assertFalse(VodPlaybackPlan.texture(1,true));}
  @Test public void normalPathDoesNotForceACodecList(){assertEquals(0,VodPlaybackPlan.options(0).length);}
  @Test public void noForcedRgb32Conversion(){for(int mode=0;mode<4;mode++)for(String option:VodPlaybackPlan.options(mode))assertFalse(option.contains("RV32"));}
  @Test public void heavyTitleRecognition(){for(String s:new String[]{"Film [4K]","Film UHD","Film 2160p","Film [DOLBY VISION]","Film [DV]","Film HDR10"})assertTrue(VodPlaybackPlan.heavyTitle(s));}

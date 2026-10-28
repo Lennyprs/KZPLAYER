@@ -216,7 +216,7 @@ class BrowseActivity : BaseActivity() {
                 }
                 when (pl.type) {
                     "m3u" -> {
-                        categories = prepareCategories(Api.m3uCategories(pl, realKind), pl)
+                        categories = prepareCategories(VodCategories.load(this@BrowseActivity, pl, realKind), pl)
                         bindCategories()
                         if (multiMode) return@launch
                         if (categories.size > 1) {
@@ -231,7 +231,7 @@ class BrowseActivity : BaseActivity() {
                         }
                     }
                     "stalker" -> {
-                        categories = prepareCategories(Api.stalkerCategories(pl, realKind), pl)
+                        categories = prepareCategories(VodCategories.load(this@BrowseActivity, pl, realKind), pl)
                         bindCategories()
                         if (multiMode) return@launch
                         setLoading(false)
@@ -246,7 +246,7 @@ class BrowseActivity : BaseActivity() {
                         }
                     }
                     else -> {
-                        categories = prepareCategories(Api.xtreamCategories(pl, realKind), pl)
+                        categories = prepareCategories(VodCategories.load(this@BrowseActivity, pl, realKind), pl)
                         bindCategories()
                         if (multiMode) return@launch
                         setLoading(false)
@@ -320,14 +320,10 @@ class BrowseActivity : BaseActivity() {
         lifecycleScope.launch {
             val base = try {
                 kotlinx.coroutines.withTimeoutOrNull(20000L) {
-                    when (pl.type) {
-                        "m3u" -> Api.m3uCategories(pl, allKind)
-                        "stalker" -> Api.stalkerCategories(pl, allKind)
-                        else -> Api.xtreamCategories(pl, allKind)
-                    }
+                    VodCategories.load(this@BrowseActivity, pl, allKind)
                 } ?: emptyList()
             } catch (e: Exception) { emptyList<Category>() }
-            CategorySync.report(this@BrowseActivity, pl, allKind, base)
+            VodCategories.report(this@BrowseActivity, pl, allKind, base)
             val visible = filterHiddenCategories(base, pl).filter { !it.id.startsWith("__") }
             srvCatCache[plId] = visible
             if (srvOpen != plId) return@launch
@@ -382,7 +378,7 @@ class BrowseActivity : BaseActivity() {
         lastBaseCategories = base
         // On transmet la liste des categories de ce serveur au backend pour que le panel puisse
         // les afficher en cases a cocher (best-effort, sans bloquer l'UI).
-        CategorySync.report(this, pl, kind, base)
+        VodCategories.report(this, pl, kind, base)
         return filterHiddenCategories(withSpecialCategories(base), pl)
     }
 
@@ -454,11 +450,7 @@ class BrowseActivity : BaseActivity() {
             val realKind = if (kind == "replay") "live" else kind
             val raw = try {
                 kotlinx.coroutines.withTimeoutOrNull(20000L) {
-                    when (pl.type) {
-                        "m3u" -> Api.m3uCategories(pl, realKind)
-                        "stalker" -> Api.stalkerCategories(pl, realKind)
-                        else -> Api.xtreamCategories(pl, realKind)
-                    }
+                    VodCategories.load(this@BrowseActivity, pl, realKind)
                 } ?: emptyList()
             } catch (_: Throwable) { emptyList<Category>() }
             val all = raw.filter { !it.id.startsWith("__") }
@@ -471,7 +463,7 @@ class BrowseActivity : BaseActivity() {
                 msgTv.text = "Aucune categorie disponible sur " + pl.nom + "."
                 return@launch
             }
-            CategorySync.report(this@BrowseActivity, pl, realKind, all)
+            VodCategories.report(this@BrowseActivity, pl, realKind, all)
             showManageCategoriesFor(pl, all)
         }
     }
@@ -1036,6 +1028,9 @@ class BrowseActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
+        if((kind=="movie"||kind=="series")&&categories.isEmpty()&&progress.visibility!=View.VISIBLE&&!multiMode){
+            SessionCache.restore(this);loadCategories()
+        }
         if(kind=="live"&&selectedCat=="__recent__"){items=LiveHistory.recentItems(this);applyFilter()}
         if (filtered.isNotEmpty() && currentFocus == null) keepFocusOnItems()
     }

@@ -1,0 +1,44 @@
+KZ PLAYER 3.6.7 — V134 — STABILITE VLC ET RESTAURATION DES CATEGORIES
+
+Cette notice remplace les consignes de sortie vidéo V133. Ce ZIP contient des sources, pas un APK déjà compilé/signé ni une preuve de lecture 4K réussie sur l'appareil.
+
+CORRECTIONS CIBLEES
+1. Films et séries restent dans VLC directement. Chaînes et replay gardent leur parcours ExoPlayer/Media3. Le lecteur principal conserve son interface habituelle sans nom de moteur affiché.
+2. Le premier parcours FHD fonctionnel est conservé : sélection matérielle normale de la bibliothèque, cache réseau 1000 ms et fichier 300 ms. Les changements de cycle de vie sont communs, mais ce parcours FHD n'est pas remplacé par une nouvelle liste de codecs expérimentale.
+3. Suppression du TextureView forcé au premier essai pour les titres lourds. Les vidéos lourdes ou encore non caractérisées utilisent SurfaceView ; le chemin de copie de buffers et le chemin explicitement logiciel supplémentaires ne sont plus essayés automatiquement pour ces fichiers. Une seconde préférence matérielle avec sortie SurfaceView reste bornée. Une bibliothèque peut toujours choisir un décodeur logiciel dans ses mécanismes automatiques : ceci n'est pas une preuve de décodage matériel.
+4. Les erreurs demandent une reprise différée, au lieu d'arrêter/recréer le lecteur depuis son callback d'erreur. Les callbacks devenus anciens ne doivent plus piloter le lecteur suivant.
+5. Arrêt natif exécuté hors du fil de l'interface, puis détachement et libération des surfaces sur le fil principal. Les ouvertures attendent la fin des libérations déjà en cours pour éviter de superposer les décodeurs, y compris entre deux activités. Une attente anormalement longue est signalée sans lancer un nouveau décodeur en parallèle. Il n'est pas possible de garantir qu'un appel natif défectueux terminera toujours.
+6. Une erreur gérée laisse un message dans le lecteur ; sa fermeture accidentelle ne déclenche plus automatiquement le retour au catalogue. Cela ne rend pas un plantage natif du processus interceptable par le gestionnaire Java.
+7. Une fin de fichier signalée très avant la durée connue est traitée comme une interruption, pas comme un film terminé ou un ordre de lancer automatiquement l'épisode suivant.
+8. Le lecteur capture le propriétaire de la source et ne réassigne plus le serveur actif global à chaque sauvegarde d'historique. L'historique accepte ce propriétaire explicitement. La session est sauvegardée avant l'entrée VOD.
+9. Classique/NewTivi/Netflix : conservation sur disque des dernières catégories films/séries chargées, isolées par identité de liste et section. Cache récent 5 minutes ; repli sur une dernière copie valide pendant 24 heures si une réponse ultérieure est vide ou échoue. Une copie vide, trop volumineuse ou corrompue n'efface pas une bonne copie. Les données sont stockées dans le répertoire privé de l'app ; les noms des fichiers sont des empreintes, pas des identifiants IPTV en clair.
+10. Le cache ne contient que les identifiants et noms de catégories, pas des liens de lecture ou des jetons de portail. Il est appliqué avant les filtres de visibilité existants, sans les contourner. Une copie restaurée n'est pas présentée au panel comme une nouvelle vérification réussie du fournisseur.
+11. Si le catalogue films/séries est vide et ne charge plus au retour, une restauration est demandée. La protection locale suppose un premier chargement réussi sous cette version ; elle ne peut pas inventer des catégories jamais reçues.
+
+VERIFICATIONS LOCALES
+148 méthodes de tests JVM du projet passent, dont 12 tests de persistance des catégories : nouvelle instance, séparation des listes/sections, réponse vide, corruption, taille maximale, expiration, horloge et remplacement atomique.
+11 vérifications du wrapper vidéo passent avec des interfaces minimales.
+37 vérifications Java de la recherche et de son stockage sur fichiers passent.
+16 vérifications du contrôleur d'interface passent avec des interfaces minimales.
+Les règles de première sortie et de reprise lourde ont été ajustées dans les tests pour les nouveaux parcours, sans supprimer les tests de routage live/replay ou de lecture saine.
+Les fichiers XML, le périmètre modifié et le CRC de l'archive sont contrôlés avant livraison.
+Ces résultats concernent du code Java et des interfaces de test locales. Le cycle de vie Android et les appels JNI nouveaux ne sont pas validés par ces tests hôtes.
+
+LIMITES IMPORTANTES
+La cause matérielle exacte des pixels gris et de la fermeture n'est pas établie : pas de rapport Java reçu, pas de trace native de l'appareil et pas d'exécution du flux sur un appareil équivalent.
+L'environnement de préparation ne dispose pas du SDK/compilateur Kotlin Android. La compilation complète doit réussir dans le workflow officiel. Les changements ne sont pas annoncés comme une réparation définitivement validée du Dolby Vision ou de toutes les vidéos 4K.
+Les capacités de décodage, le profil Dolby Vision, la couche compatible disponible, les couleurs HDR et le débit fournisseur restent déterminants. Aucune promesse universelle de lecture instantanée, de zéro saccade ou de zéro plantage n'est donnée.
+Une SurfaceView adaptée ou un compteur d'images qui progresse ne prouve pas que l'image physique de la dalle est correcte.
+Aucun réencodage, serveur de transcodage, réduction volontaire de résolution ou contournement de licence n'est ajouté. Le problème fournisseur de replay HTTP 403 n'est pas déclaré réparé.
+Aucun accès au code interne propriétaire de TiviMate/Ibo Player n'est revendiqué. Les choix de surface et de cycle de vie reposent sur les API publiques Android/LibVLC.
+
+INSTALLATION
+Extraire le ZIP à la racine du dépôt local KZPLAYER, là où se trouvent app/ et .github/, en remplaçant les fichiers. Ne pas créer de dossier intermédiaire. Exécuter depuis ce dépôt :
+git add app/build.gradle app/src A-LIRE-3.6.7-V134.txt
+git commit -m "Stabilise VLC et restaure les categories VOD - 3.6.7"
+git push
+Attendre la réussite complète du workflow officiel. Installer l'APK de cette nouvelle exécution en mise à jour, sans désinstaller l'app et sans effacer les données. Le diagnostic Gradle existant reste disponible en cas d'échec de compilation.
+
+PERIMETRE PRESERVE
+Moteur de recherche approuvé, API fournisseur, transport réseau vidéo, authentification, backend Apps Script, panels, signatures, identités des APK et règles de mise à jour : fichiers inchangés. Les seules modifications du lecteur principal sont la sauvegarde de session avant le routage VOD existant. Les écrans de catalogue délèguent le chargement de leurs catégories au cache tout en conservant le chargement des contenus et leurs filtres.
+Les avis légaux et fichiers LGPL sont conservés. Leur présence ne constitue pas à elle seule une vérification complète des obligations de publication des sources correspondantes et de remplacement/relinking du futur binaire.
