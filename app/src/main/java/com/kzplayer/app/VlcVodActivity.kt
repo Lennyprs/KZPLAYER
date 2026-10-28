@@ -78,7 +78,7 @@ class VlcVodActivity : AppCompatActivity() {
         heavy=true // Unknown geometry is not permission to force software decoding of a possible 4K file.
         mode=(savedInstanceState?.getInt("mode")?:VodPlaybackPlan.first(declaredHeavy)).coerceIn(0,3)
         shouldPlay=savedInstanceState?.getBoolean("wantsPlay")?:true
-        if(heavy&&mode>1)mode=1
+        if(heavy&&mode>2)mode=2
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         setContentView(R.layout.activity_player)
@@ -146,7 +146,9 @@ class VlcVodActivity : AppCompatActivity() {
                 activeMedia=media
                 // Cache is set before HW selection so LibVLC does not replace it with legacy defaults.
                 media.addOption(":network-caching=1000");media.addOption(":file-caching=300")
-                if(mode==0)media.setHWDecoderEnabled(true,false)
+                // All heavy-media retries remain on Android hardware decoders; mode 3 is
+                // reserved for ordinary media and is not reached by the heavy retry plan.
+                media.setHWDecoderEnabled(mode<=2,mode>2)
                 for(option in VodPlaybackPlan.options(mode))media.addOption(option)
                 if(kind=="series")media.addOption(":audio-language=fr,fra,fre")
                 if(extra("vlcSubtitleUrl").isNotBlank())media.addOption(":sub-file="+extra("vlcSubtitleUrl"))
@@ -225,11 +227,48 @@ class VlcVodActivity : AppCompatActivity() {
             saveProgress()
             if(upstreamStatus>=400){fail("Le serveur refuse le flux (HTTP $upstreamStatus).");return@post}
             val next=VodPlaybackPlan.next(mode,heavy)
-            if(next<0){fail("Aucune image stable n'a été obtenue. La lecture est arrêtée sans quitter automatiquement cet écran.");return@post}
+            if(next<0){startMedia3Fallback();return@post}
             mode=next;ready=false;buffering=true;busy=true;controller.refresh()
             dispose()
         }
     }
+    /** Final bounded fallback: hand VOD to Media3 once, then prevent a VLC/Media3 loop. */
+    private fun startMedia3Fallback(){
+        if(intent.getBooleanExtra("exoFallbackAttempted",false)){
+            fail("Aucune image stable n'a été obtenue avec VLC ni avec le lecteur de secours. Vérifie le format vidéo ou utilise une version compatible du film.")
+            return
+        }
+        resumeMs=engine?.getTime()?.takeIf {it>0L}?:resumeMs
+        saveProgress()
+        failed=true;ready=false;buffering=false
+        intent.putExtra("exoFallbackAttempted",true)
+            .putExtra("vlcFallbackAttempted",true)
+            .putExtra("vodRecoveryCount",1)
+            .putExtra("vodRecoveryPosition",resumeMs)
+            .putExtra("url",sourceUrl)
+            .putExtra("title",mediaTitle)
+            .putExtra("historyKind",kind)
+        val next=Intent(this,PlayerActivity::class.java)
+        intent.extras?.let {next.putExtras(it)}
+        next.putExtra("url",sourceUrl).putExtra("title",mediaTitle)
+            .putExtra("historyKind",kind)
+            .putExtra("exoFallbackAttempted",true)
+            .putExtra("vlcFallbackAttempted",true)
+            .putExtra("vodRecoveryCount",1)
+            .putExtra("vodRecoveryPosition",resumeMs)
+        dispose()
+        lifecycleScope.launch {
+            val released=withTimeoutOrNull(8000L){VlcReleaseQueue.awaitIdle();true}?:false
+            if(isFinishing||isDestroyed)return@launch
+            if(!released){
+                fail("Le décodeur VLC ne s'est pas libéré à temps. Le lecteur de secours n'a pas été lancé pour éviter deux décodeurs simultanés.")
+                return@launch
+            }
+            try{startActivity(next);finish()}
+            catch(_:Exception){fail("Le lecteur de secours n'a pas pu être ouvert.")}
+        }
+    }
+
     private fun setPlaying(value:Boolean){
         shouldPlay=value;health.reset();graceUntil=android.os.SystemClock.elapsedRealtime()+1500
         val p=engine
@@ -313,7 +352,7 @@ class VlcVodActivity : AppCompatActivity() {
             if(url.isNullOrBlank()||isFinishing||isDestroyed){advancing=false;return@launch}
             Session.episodeIndex=index
             val target=Intent(this@VlcVodActivity,PlayerActivity::class.java);intent.extras?.let {target.putExtras(it)}
-            target.extras?.keySet()?.toList()?.filter {it.startsWith("vlc")||it.startsWith("vodRecovery")||it=="vodRejectedDecoders"||it=="vodCompatibleBase"||it=="vodUaIndex"}?.forEach {target.removeExtra(it)}
+            target.extras?.keySet()?.toList()?.filter {it.startsWith("vlc")||it.startsWith("vodRecovery")||it=="vodRejectedDecoders"||it=="vodCompatibleBase"||it=="vodUaIndex"||it=="exoFallbackAttempted"||it=="vlcFallbackAttempted"}?.forEach {target.removeExtra(it)}
             target.putExtra("url",url).putExtra("title",Session.seriesItem?.let {"${it.name} - ${next.name}"}?:next.name).putExtra("logo",next.logo)
                 .putExtra("historySourceCmd",next.cmd.orEmpty()).putExtra("historySourceStreamId",next.streamId.orEmpty()).putExtra("historySourceContainerExt",next.containerExt.orEmpty()).putExtra("queued",true)
             startActivity(target);finish()

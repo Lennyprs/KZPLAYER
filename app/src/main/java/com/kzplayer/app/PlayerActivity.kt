@@ -454,7 +454,8 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         // Films/episodes enter VLC directly; no ExoPlayer, decoder probe or startup timeout first.
-        if(VodPlaybackPlan.useVlc(isReplayMode,intent.getStringExtra("historyKind"),mode)){
+        if(VodPlaybackPlan.useVlc(isReplayMode,intent.getStringExtra("historyKind"),mode,
+                intent.getBooleanExtra("exoFallbackAttempted",false))){
             SessionCache.save(this)
             val owner=Session.current
             val vodKind=if(watchKind=="series")"series" else "movie"

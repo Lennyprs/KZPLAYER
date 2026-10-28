@@ -1,0 +1,28 @@
+KZ PLAYER 3.6.8 — V135 — REPLI VIDEO 4K/HDR
+
+OBJECTIF
+Améliorer la tolérance aux flux VOD 4K/UHD/HDR10/Dolby Vision qui produisent du son sans image sur certains appareils Android TV et mobiles.
+
+MODIFICATIONS
+1. VLC conserve le premier parcours matériel standard et SurfaceView.
+2. Les reprises lourdes sont bornées à trois chemins : matériel par défaut, MediaCodec avec rendu direct, puis MediaCodec sans rendu direct. La troisième tentative permet de contourner certains problèmes de sortie vidéo/surface.
+3. Les deux chemins de reprise lourde nomment explicitement les modules MediaCodec Android et ne demandent plus le module « all », afin d'éviter de choisir implicitement un décodeur logiciel pour un flux lourd.
+4. Si les chemins VLC échouent, le player tente une seule fois Media3/ExoPlayer avec le renderer de récupération existant. Un indicateur empêche la boucle VLC → Media3 → VLC. Le lecteur conserve la position connue et attend la libération du lecteur natif avant de démarrer l'autre moteur.
+5. Les chaînes TV et le replay ne changent pas de parcours. Les épisodes suivants effacent les marqueurs de repli de l'épisode précédent.
+6. La version affichée passe à 3.6.8 ; le workflow continue de calculer un versionCode supérieur pour les mises à jour.
+
+LIMITES IMPORTANTES
+- Ce ZIP contient les sources et la configuration de compilation, pas un APK compilé ou une preuve de lecture sur un boîtier réel.
+- Aucun lecteur logiciel ne peut garantir le décodage d'un profil Dolby Vision absent du matériel. Media3 et VLC utilisent les capacités et les décodeurs exposés par Android.
+- Le repli Media3 améliore les chances de lecture, mais ne convertit pas un flux Dolby Vision en HDR10/SDR. Une conversion réelle exige une piste compatible déjà disponible ou un transcodage serveur autorisé.
+- Les options LibVLC et la compilation Android doivent être validées par le workflow GitHub officiel, puis testées sur le boîtier concerné. Le diagnostic doit préciser le modèle, le codec/profil du fichier et les logs si l'écran reste noir.
+- Le test complet du cycle de vie natif/JNI et la lecture HDR physique ne peuvent pas être validés uniquement par des tests JVM.
+
+COMPILATION / MISE À JOUR
+1. Extraire ce ZIP à la racine du dépôt, là où se trouvent app/ et .github/.
+2. Vérifier le diff, puis envoyer les modifications au dépôt de la branche main.
+3. Attendre la réussite complète du workflow Build KZ Player APK (signed).
+4. Installer l'APK signé généré par ce workflow en mise à jour, sans désinstaller l'ancienne version ni effacer les données.
+5. Tester un fichier HDR10 puis un fichier Dolby Vision et conserver les diagnostics en cas d'échec.
+
+Les fichiers non liés à la lecture VOD sont conservés depuis la source fournie. Les changements ciblent le plan de lecture VLC, le repli Media3, la condition de routage VOD et la version.
