@@ -842,7 +842,7 @@ class PlayerActivity : AppCompatActivity() {
         val f=exo.rendererFormat?:p.videoFormat?:return false
         if(!VodVideoPolicy.alternateEngine(isLiveMode,isReplayMode,intent.getBooleanExtra("vlcFallbackAttempted",false),f.drmInitData!=null,
             failedRendererTrackType(error)==androidx.media3.common.C.TRACK_TYPE_VIDEO,error.errorCodeName,f.sampleMimeType,f.width,f.height,intent.getIntExtra("vodRecoveryCount",0)>0))return false
-        if(!isVod||isFinishing||isDestroyed)return false
+        if(isLiveMode||isReplayMode||isFinishing||isDestroyed)return false
         intent.putExtra("vlcFallbackAttempted",true)
         recoveryHandler.removeCallbacks(startupWatchdog)
         val owner=Session.current

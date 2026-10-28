@@ -1,0 +1,54 @@
+KZ PLAYER 3.6.4 — V131 — CORRECTION COMPILATION KOTLIN
+===================================================
+PATCH MINIMAL pour le projet 3.6.3 V129 deja installe dans le depot.
+Compatible avec le diagnostic CI V130 : aucun fichier CI n'est remplace.
+Le ZIP ne contient pas le projet entier ni un APK signe.
+
+ERREUR REELLE DU DIAGNOSTIC gradle-diagnostic-54-1
+PlayerActivity.kt:845:13 Unresolved reference: isVod
+La variable isVod etait locale a onCreate ; startVlcFallback ne pouvait
+pas la lire. C'est une erreur de portee dans l'ajout du moteur de secours,
+pas un refus de telechargement de LibVLC.
+
+CORRECTION
+La methode utilise les champs de l'activite deja declares :
+  if(isLiveMode||isReplayMode||isFinishing||isDestroyed)return false
+isLiveMode est initialise par isLiveMode = !isVod dans onCreate.
+Les controles video, DRM, qualite et tentative unique de VodVideoPolicy
+restent inchanges. La variable locale de onCreate est preservee.
+Version affichee : 3.6.4. Calcul monotone du versionCode inchange.
+Aucun changement de recherche, API, favoris, direct/replay, chaines
+recentes, LibVLC, historique, licence, panels, backend ou signature.
+
+VERIFICATIONS
+- Diagnostic original lu ; l'erreur Kotlin ci-dessus est la seule ligne
+  de diagnostic compilateur de type e: presente dans le journal fourni.
+- Deux fichiers existants modifies seulement : app/build.gradle et
+  PlayerActivity.kt. Tous les autres fichiers du projet sont identiques.
+- 16 combinaisons de conditions VOD/replay/fermeture comparees.
+- Reexecution de 88 methodes JVM projet, 11 controles de wrappers sur
+  interfaces minimales et 37 controles Java recherche/M3U : passes.
+  Les fichiers Java testes sont inchanges ; ces controles ne compilent
+  pas PlayerActivity et ne remplacent donc PAS une compilation Android.
+- XML verifie et CRC du ZIP valide.
+- Pas de compilation complete Kotlin/Android locale, signature d'APK,
+  installation ou verification reelle 4K/Dolby Vision annoncee.
+La nouvelle CI doit confirmer la suite du build ; une autre erreur
+ulterieure ne peut pas etre exclue par ces seuls controles locaux.
+
+INSTALLATION
+1. Extraire ces trois fichiers a la racine du depot existant en remplacant
+   les deux fichiers Android. Ne pas remplacer tout le depot par le ZIP.
+   Conserver la dependance LibVLC, ses nouveaux fichiers et le patch CI V130.
+2. Executer :
+
+git add app/build.gradle app/src/main/java/com/kzplayer/app/PlayerActivity.kt A-LIRE-3.6.4-V131.txt
+git commit -m "Corrige la portee Kotlin du secours LibVLC - 3.6.4"
+git push
+
+3. Attendre la NOUVELLE execution GitHub sur ce commit. Relancer le job
+   precedent sans nouveau commit recompilerait l'ancien code en erreur.
+4. Si la compilation et la signature sont vertes, recuperer l'APK signe
+   de cette nouvelle execution et installer en mise a jour, sans desinstaller.
+5. Tester le film concerne ; compilation reussie et fluidite sur appareil
+   sont deux validations distinctes.
