@@ -1,0 +1,83 @@
+KZ PLAYER — CORRECTIF DE TESTS V137 — VERSION AFFICHÉE 3.7.1 INCHANGÉE
+==================================================================
+À appliquer sur le dépôt 3.7.1 V136 qui a produit gradle-diagnostic-63-1.zip.
+Ce ZIP contient 4 fichiers uniquement, pas un nouvel APK ni un transcodeur.
+
+CAUSE ÉTABLIE DANS LE JOURNAL FOURNI
+----------------------------------
+La tâche :app:testReleaseUnitTest échoue : 116 tests, 10 échecs.
+Les 10 échecs ont la même cause :
+  Method parse in android.net.Uri not mocked
+Ils proviennent des nouveaux tests VodSourceHintsTest qui construisent un
+DataSpec et appellent Android Uri.parse dans un test JVM local sans Android.
+Le journal montre que les tâches de compilation Kotlin et Java ont été
+franchies avant cet échec. Le build complet et l'APK final n'ont pas réussi.
+Cette erreur de test n'est pas un diagnostic de codec ou de lecture 4K.
+
+CORRECTION
+----------
+- 28 tests purs de signatures et de règles de correction restent en src/test.
+- Les 10 tests qui utilisent vraiment Uri/DataSpec sont conservés dans
+  src/androidTest, avec AndroidJUnit4 et le runner Android approprié.
+- Les 38 cas de la nouvelle fonctionnalité sont tous conservés.
+- Pas d'ignoreFailures, de returnDefaultValues ou de suppression des assertions.
+- Le workflow habituel exécute les 106 tests JVM restants. Les 10 tests Android
+  doivent être exécutés séparément sur un appareil ou émulateur Android via
+  connectedDebugAndroidTest ; ils ne sont PAS automatiquement exécutés par
+  le workflow de compilation actuel, et n'ont pas été exécutés ici.
+- Aucun fichier app/src/main modifié : lecteur, codecs, FFmpeg, réseaux,
+  recherche, catégories, licences, données et signature restent inchangés.
+- Pas d'incrément de version : correction d'organisation de tests uniquement,
+  versionName reste 3.7.1 et le workflow calcule le nouveau versionCode.
+
+INSTALLATION
+------------
+1. Extraire ce petit ZIP à la racine du dépôt KZPLAYER existant et accepter
+   les remplacements. Il faut conserver toutes les sources 3.7.1 précédentes.
+2. Depuis cette racine, exécuter exactement ces trois lignes :
+
+   git add app/build.gradle app/src/test/java/com/kzplayer/app/VodSourceHintsTest.java app/src/androidTest/java/com/kzplayer/app/VodSourceHintsAndroidTest.java A-LIRE-CI-V137.txt
+   git commit -m "Corrige les tests Android executes en JVM - V137"
+   git push
+
+3. Attendre le résultat complet du workflow officiel. Ne pas présenter cette
+   livraison comme une compilation Android déjà validée : elle ne l'est pas ici.
+4. Si le workflow réussit, installer l'APK officiel en mise à jour, sans
+   désinstaller l'application ni effacer ses données.
+
+VÉRIFICATIONS LOCALES
+--------------------
+106 méthodes JVM et 37 contrôles de recherche Java passés avec des fixtures
+locales minimales. La fixture Uri.parse a volontairement été rendue levante
+pour reproduire le type d'erreur du journal ; les tests JVM ne l'appellent plus.
+Portée des changements vérifiée : seuls le Gradle de configuration des tests,
+les deux classes de test et ce guide sont livrés. Code d'exécution inchangé.
+Pas de compilation Gradle/Android complète, de test instrumenté réel, de push
+ou de lecture 4K physique effectué ici.
+
+DIAGNOSTIC WINDOWS UTILE POUR LA LECTURE
+--------------------------------------
+Oui, comparer exactement le même film dans un lecteur Windows peut aider.
+Une lecture réussie sur PC ne garantit pas celle sur Android : le PC peut
+utiliser un autre décodeur, le processeur ou une conversion HDR spécifique.
+
+À transmettre de préférence :
+1. Nom/version du lecteur Windows, résultat concret (image en mouvement, son,
+   couleurs), mode de décodage matériel/logiciel si le lecteur l'indique.
+2. Rapport MediaInfo du MÊME contenu, en texte : conteneur, codec vidéo/Codec ID,
+   profil/niveau, dimensions, fréquence, débit, profondeur 8/10 bits, format HDR
+   et profil Dolby Vision s'il est indiqué, codecs audio et nombre de canaux.
+   Retirer les chemins contenant un nom personnel, identifiants ou URL privées.
+3. HTTP Debugger : uniquement la séquence limitée au lancement de ce contenu,
+   avec codes HTTP, redirections expurgées, Content-Type, Content-Length,
+   Accept-Ranges et Content-Range. Conserver l'extension ou la structure utile
+   mais remplacer les segments d'identifiants et valeurs de jetons par MASQUÉ.
+   Il n'est pas nécessaire de transmettre le film entier.
+
+NE PAS ENVOYER un export complet brut. Retirer systématiquement : username,
+password, MAC, tokens, paramètres d'authentification, Authorization, Cookie,
+Set-Cookie, URLs de connexion/playlist complètes et certificats/clés privées.
+Les réponses Location et les corps de requêtes peuvent contenir ces secrets
+également. Un aperçu expurgé est préférable à une capture brute.
+HTTP Debugger ne suffit pas à identifier tous les profils codecs : le rapport
+MediaInfo ou les propriétés techniques détaillées du lecteur est essentiel.

@@ -12,6 +12,7 @@ android {
         buildConfigField "String", "BRAND_ID", "\"${System.getenv('BRAND_ID') ?: ''}\""
         minSdk 21
         targetSdk 34
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // v392 : decalage +400 pour rester au-dessus des anciens builds Kozukaa
         // (qui allaient jusqu a 391-392). Sinon l auto-update dans l app dit "deja
         // a jour" parce que GITHUB_RUN_NUMBER repart a 1 sur le nouveau depot Lennyprs.
@@ -65,6 +66,8 @@ android {
 
 dependencies {
     testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
