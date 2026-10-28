@@ -1,0 +1,14 @@
+{
+  "run": "https://github.com/Lennyprs/KZPLAYER/actions/runs/39640257016",
+  "commit": "6bd844e72c0d7ddda98d7fa9dcc92160397b38eb",
+  "playerGitBlob": "59ee1e73f6ee6928f6a783da2d8d768a0fae525f",
+  "verification": "55329-byte reference reconstructed from local archive plus license lifecycle hooks; matches GitHub blob SHA-1 exactly.",
+  "restored": "Standard Media3 factory, native audio sink, extension ON, synchronous codec queue, reference buffers, HEVC/AVC preference without 1080p cap, native source autodetection and same-resource VOD transport alternatives.",
+  "preservedExceptions": [
+    "Replay-specific protections and routing",
+    "No opaque query rewriting",
+    "No VOD variant carousel on authentication/rate/service refusals",
+    "Exact title/episode identity",
+    "Safe diagnostic dialog and playback owner/history fixes"
+  ]
+}

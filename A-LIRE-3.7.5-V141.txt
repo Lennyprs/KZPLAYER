@@ -1,0 +1,113 @@
+KZ PLAYER — 3.7.5 V141 — RESTAURATION DU LECTEUR DE RÉFÉRENCE V112
+================================================================
+But : rétablir le pipeline de lecture de la version 3.5.0 V112 indiquée comme
+fonctionnelle par l'utilisateur, sans revenir en arrière sur le reste de l'application.
+Ce n'est pas un retour de toute l'application en 3.5.0.
+
+RÉFÉRENCE EXACTE IDENTIFIÉE
+--------------------------
+Build officiel signé nº 38, succès GitHub :
+https://github.com/Lennyprs/KZPLAYER/actions/runs/39640257016/job/119361589130
+Commit : 6bd844e72c0d7ddda98d7fa9dcc92160397b38eb
+Empreinte Git du PlayerActivity.kt : 59ee1e73f6ee6928f6a783da2d8d768a0fae525f
+Taille : 55 329 octets.
+Le fichier historique a été retrouvé à partir d'une archive locale et de ses
+hooks de licence, puis son empreinte Git complète a été comparée à l'API GitHub :
+correspondance exacte à l'octet près, pas une reconstitution approximative.
+Le ZIP V112 fourni séparément contient seulement trois fichiers de personnalisation
+et compilation ; la référence du lecteur a été identifiée grâce au lien de build.
+
+CE QUI EST RÉTABLI
+-----------------
+- DefaultRenderersFactory Media3 standard pour chaînes, films et séries ;
+  Media3 1.4.1, repli natif d'initialisation activé, file de codec synchrone,
+  extensions en mode ON comme dans le lecteur de référence.
+- Audio : retour à la construction standard de la référence, avec l'extension
+  FFmpeg audio existante disponible, attributs MEDIA et préférence stéréo.
+  Le mixeur PCM forcé et la priorité FFmpeg forcée V138 sont RETIRÉS.
+- Vidéo : préférence HEVC puis AVC de la référence. Aucune limite 1080p imposée,
+  aucun profil Dolby/HEVC réécrit ou forcé, aucun émulateur/transcodage ajouté.
+- Buffers VOD 8000/60000/1500/3000 et live 10000/60000/2500/5000 identiques
+  au fichier PlayerActivity.kt de référence.
+- Détection native de conteneur par Media3 : retrait du wrapper V136 et de ses
+  réouvertures HLS/DASH correctives en VOD.
+- Retour des variantes de transport VOD du même lien de ressource (.mkv/.mp4/
+  .ts/etc.), comme dans la référence, après une erreur réelle. Aucun titre de
+  remplacement ni recherche approximative de film/épisode dans le catalogue.
+- Pour Stalker, le lien fourni est joué tel quel, sans variante fabriquée.
+- Les fichiers locaux file:// et content:// gardent leurs chemins exacts.
+
+GARDE-FOUS CONSERVÉS PAR RAPPORT À UN REMPLACEMENT AVEUGLE
+-------------------------------------------------------
+Cette livraison fusionne le pipeline de référence avec les fonctionnalités récentes ;
+PlayerActivity.kt n'est donc pas intégralement remplacé par le fichier historique.
+- Les paramètres de requête opaques (tokens, identifiants/signatures) ne sont
+  jamais modifiés par les variantes de transport.
+- Pas de carrousel VOD de variantes sur refus 401/403/429/503/512. Les reprises
+  d'authentification déjà bornées restent en place ; pas de nouvelle sonde initiale.
+- Le watchdog de démarrage VOD qui changeait de signature au bout de 9 secondes
+  n'est pas réactivé. Les changements de source ne servent qu'après erreur réelle.
+- Les protections replay (limitation HTTP 429/Retry-After, archives et interdiction
+  de basculement involontaire vers le direct, reprises spécifiques) sont conservées.
+- Historique isolé par liste propriétaire, bonne reprise, identité de l'épisode
+  suivant, sous-titres, reprise après pause d'activité et fenêtre d'erreur sûre conservés.
+- Le diagnostic sans URL ni identifiants reste disponible en cas d'erreur.
+- Les méthodes de construction des mini-lecteurs live sont inchangées par rapport
+  à la référence locale historique vérifiée. Leurs ajouts de récents, propriétaires
+  et navigation ne sont pas annulés. La preuve Git à l'octet près concerne le
+  PlayerActivity.kt du build nº 38, pas tous les fichiers historiques du dépôt.
+
+AMÉLIORATIONS DE L'APPLICATION CONSERVÉES
+---------------------------------------
+Recherche approuvée, catégories/cache, multi-liste, favoris, chaînes vues récemment,
+historique, épisodes, API fournisseurs et en-têtes HTTP, téléchargements/replay,
+licences, révocations, personnalisation, identités séparées, sécurité de signature,
+workflows et calcul du versionCode conservés. Pas de modification Apps Script ou
+Cloudflare. Pas de changement de package de l'application officielle.
+
+INSTALLATION — IMPORTANT
+-----------------------
+1. Extraire ce ZIP COMPLET à la racine du dépôt local KZPLAYER (dossier contenant
+   app, tools, .github et build.gradle). Accepter les remplacements.
+2. Dans cette racine, exécuter :
+
+   python3 tools/release/remove_libvlc_v135.py
+
+   Le script garde son nom historique, mais est actualisé pour 3.7.5 : il retire
+   les vieux fichiers VLC ET les fabriques/essais VOD V135–V139 devenus inutiles.
+   Ne pas sauter cette étape : une extraction ZIP ne supprime pas les anciens
+   fichiers du dépôt. Le nettoyage est limité à une liste fixe et relançable.
+3. Puis exactement ces trois commandes Git :
+
+   git add -A app tools/release/remove_libvlc_v135.py A-LIRE-3.7.5-V141.txt REFERENCE-LECTURE-V112.json
+   git commit -m "Restaure le lecteur V112 en conservant les ameliorations - 3.7.5"
+   git push
+
+4. Attendre que le workflow Android officiel soit entièrement vert.
+5. Installer le nouvel APK officiel en mise à jour SANS désinstaller, sans effacer
+   les données et sans changer de signature. Vérifier la version affichée : 3.7.5.
+   Les APK personnalisés restent dans leur circuit de build/identité propre.
+6. Vérifier la lecture du même contenu qui fonctionne sur la 3.5.0 de référence.
+La procédure ADB peut rester en pause pour cette restauration.
+Les autres guides inclus sont historiques ; suivre celui-ci pour cette version.
+
+CONTRÔLES EFFECTUÉS ET LIMITES
+-----------------------------
+- 69 méthodes JVM locales encore applicables + 37 contrôles recherche Java.
+- Comparaison à l'octet près des blocs restaurés : fabrique de renderers,
+  buffers, attributs/paramètres audio, préférence vidéo HEVC/AVC.
+- Protections replay, API fournisseurs, recherche, stockage de catégories,
+  historique et sources HTTP vérifiés préservés.
+- 137 XML analysés.
+- Simulation d'extraction sur les versions 3.7.4 ET 3.6.7 : après nettoyage
+  relancé deux fois, arbre de fichiers exactement identique à la livraison.
+- Les tests des helpers expérimentaux retirés sont supprimés avec leurs helpers,
+  pas transformés en tests ignorés ni désactivés pour masquer un échec.
+
+Ces contrôles locaux utilisent des interfaces Android minimales quand nécessaire.
+Ils ne constituent PAS une compilation Android/Kotlin complète ni une validation
+native du décodage, du son, de l'HDR ou de la fluidité sur le X96Q. La réussite
+ancienne concerne le build de référence selon l'utilisateur ; cette nouvelle
+fusion doit encore être compilée par le workflow et validée sur l'appareil.
+Aucun push, APK signé ou installation effectué par l'assistant. Pas de garantie
+universelle ou instantanée. Aucun identifiant IPTV ni donnée privée de photo ajouté.
