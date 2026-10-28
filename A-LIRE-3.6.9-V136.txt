@@ -1,0 +1,10 @@
+KZ PLAYER 3.6.9 — V136
+
+Modifications :
+- LibVLC est déjà intégré à l’application ; aucune application externe à installer.
+- Pour les films/séries, les tentatives de lecture restent sur la même URL et le même titre.
+- Après les trois stratégies matérielles LibVLC, ajout d’une dernière tentative de décodage logiciel via le moteur LibVLC/FFmpeg embarqué.
+- Le décodage logiciel peut être trop lent pour certains flux 4K sur les appareils peu puissants et ne garantit pas le rendu HDR/Dolby Vision exact.
+- Version Android : 3.6.9.
+
+Compilation recommandée : vérifier les tests unitaires et le workflow GitHub Actions avant distribution.

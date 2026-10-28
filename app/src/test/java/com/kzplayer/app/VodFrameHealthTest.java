@@ -19,7 +19,7 @@ public class VodFrameHealthTest {
  @Test public void lowNativeFrameRateIsNotAutomaticallyRejected(){for(int s=0;s<60;s++)assertEquals(VodFrameHealth.OK,health.sample(s*1000,true,false,false,s+1,s*50,s*1000,5));}
  @Test public void fewImagesWithoutDropsAreNotCalledInsufficientCpu(){for(int s=0;s<60;s++)assertEquals(VodFrameHealth.OK,sample(s,s+1,0));}
  @Test public void manualResetStartsANewObservation(){sample(0,1,0);health.reset();assertEquals(VodFrameHealth.OK,sample(100,1,0));}
- @Test public void heavyFilesNeverForceTheSoftwareOnlyPath(){assertEquals(1,VodPlaybackPlan.next(0,true));assertEquals(2,VodPlaybackPlan.next(1,true));assertEquals(-1,VodPlaybackPlan.next(2,true));}
+ @Test public void heavyFilesTrySoftwareOnlyPathAfterHardwarePaths(){assertEquals(1,VodPlaybackPlan.next(0,true));assertEquals(2,VodPlaybackPlan.next(1,true));assertEquals(3,VodPlaybackPlan.next(2,true));assertEquals(-1,VodPlaybackPlan.next(3,true));}
  @Test public void fullHdMayUseOneSoftwareOnlyPath(){assertEquals(3,VodPlaybackPlan.next(2,false));assertEquals(-1,VodPlaybackPlan.next(3,false));}
  @Test public void noRetryCycle(){for(boolean heavy:new boolean[]{false,true}){int n=0;for(int mode=0;mode>=0;mode=VodPlaybackPlan.next(mode,heavy))assertTrue(++n<=4);}}
  @Test public void audioDecoderRemainsAvailableInEveryPath(){for(int mode=1;mode<4;mode++)assertTrue(Arrays.stream(VodPlaybackPlan.options(mode)).anyMatch(s->s.startsWith(":codec=")&&(s.contains("mediacodec")||s.contains("avcodec")||s.endsWith(",all"))));}

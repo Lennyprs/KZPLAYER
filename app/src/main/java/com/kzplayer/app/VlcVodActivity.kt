@@ -78,7 +78,6 @@ class VlcVodActivity : AppCompatActivity() {
         heavy=true // Unknown geometry is not permission to force software decoding of a possible 4K file.
         mode=(savedInstanceState?.getInt("mode")?:VodPlaybackPlan.first(declaredHeavy)).coerceIn(0,3)
         shouldPlay=savedInstanceState?.getBoolean("wantsPlay")?:true
-        if(heavy&&mode>2)mode=2
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         setContentView(R.layout.activity_player)
@@ -146,8 +145,9 @@ class VlcVodActivity : AppCompatActivity() {
                 activeMedia=media
                 // Cache is set before HW selection so LibVLC does not replace it with legacy defaults.
                 media.addOption(":network-caching=1000");media.addOption(":file-caching=300")
-                // All heavy-media retries remain on Android hardware decoders; mode 3 is
-                // reserved for ordinary media and is not reached by the heavy retry plan.
+                // Modes 0-2 try device hardware decoding/rendering. Mode 3 is the final
+                // bundled software-decoder attempt; no separate app/download is required.
+                // Keep the exact source URL and selected title across every attempt.
                 media.setHWDecoderEnabled(mode<=2,mode>2)
                 for(option in VodPlaybackPlan.options(mode))media.addOption(option)
                 if(kind=="series")media.addOption(":audio-language=fr,fra,fre")
