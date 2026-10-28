@@ -28,7 +28,7 @@ android {
             vcCode = runNum + 400
         }
         versionCode vcCode
-        versionName "3.6.2"
+        versionName "3.6.3"
     }
 
     buildFeatures { buildConfig true }
@@ -65,6 +65,8 @@ android {
 
 dependencies {
     testImplementation 'junit:junit:4.13.2'
+    // Independent video decoder/demuxer, instantiated only after heavy VOD decoding fails.
+    implementation 'org.videolan.android:libvlc-all:3.6.5'
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'

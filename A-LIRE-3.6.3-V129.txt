@@ -1,0 +1,122 @@
+KZ PLAYER 3.6.3 — V129 — MOTEUR VIDEO DE SECOURS INTEGRE
+=======================================================
+PROJET SOURCE COMPLET. Base 3.6.2 V128. Ceci n'est pas un APK signe.
+
+OBSERVATION REELLE ET CHANGEMENT DE STRATEGIE
+La derniere photo montre une erreur VIDEO Dolby Vision hev1.08.06,
+3832 x 1596 sur XGIMI WK03K avec OMX.MS.HEVC.Decoder materiel.
+La priorite materielle seule n'a donc pas resolu ce cas. Cette capture
+ne prouve ni une incompatibilite absolue, ni une cause precise dans le flux.
+La version 3.6.3 ajoute une autre pile de demultiplexage/decodage : LibVLC.
+Ce n'est pas une simulation, un simple changement d'extension ou la copie
+supposee de TiviMate. Son implementation interne n'a pas ete inspectee.
+
+FONCTIONNEMENT
+1. Lecture habituelle Media3, avec les reglages approuves et les reprises
+   video bornees precedentes. Les lectures qui reussissent restent dessus.
+2. Si une erreur VIDEO persiste sur une VOD 4K/Dolby Vision non protegee,
+   bascule automatique vers un ecran de secours LibVLC integre a KZ Player.
+   Il n'y a pas d'application VLC externe a installer.
+3. LibVLC essaie sa propre selection automatique de decodeur, puis un seul
+   essai logiciel en cas d'echec/sortie video absente au demarrage.
+   Un bouton Logiciel permet egalement de lancer cet essai borne.
+4. Pas de boucle Media3 -> VLC -> Media3 sur le meme film. Pas de secours
+   sur le direct, le replay, les erreurs audio/HTTP ou les contenus DRM.
+5. Le flux source n'est pas reencode et sa resolution n'est pas reduite
+   artificiellement. Les metadonnees/reponses HTTP ne sont pas un transcodage.
+
+INTERFACE ET CONTINUITE
+- Retour, pause/lecture, avance/recul de 10 s, barre de progression,
+  choix audio et sous-titres integres, telecommande Android TV.
+- Commandes masquees apres le demarrage ; OK/haut/bas les font reapparaitre.
+- Reprise de position et sauvegarde de progression dans WatchHistory.
+- Liens MAC/Stalker renouveles avant transfert et nouvel essai.
+- Retour au lecteur principal pour l'episode suivant dans une file existante.
+- Parametres de source/serie et sous-titre externe deja selectionne transmis.
+  La recherche en ligne de nouveaux sous-titres n'est pas reimplementeee
+  dans l'ecran de secours ; l'interface habituelle reste disponible hors secours.
+- Controle de licence applique egalement a cette activite non exportee.
+
+TRANSPORT LOCAL PRIVE
+LibVLC utilise un pont HTTP limite a 127.0.0.1, port aleatoire, secret 256 bits.
+Il n'accepte pas d'URL arbitraire fournie par le client. Il reutilise le
+transport KzHttpDataSource, les DNS et le User-Agent du fournisseur, au lieu
+de donner les cookies/jetons de portail a la bibliotheque native.
+HEAD n'ouvre pas le lien source a usage unique. Les plages de lecture sont
+conservees ; les URI HLS relatives et attributs URI sont reecrits vers des
+routes locales autorisees, sans changer les signatures des URL amont.
+Les enfants sur un autre origin ne recoivent pas les en-tetes prives de
+la source. Les comportements de redirection du transport existant restent
+ceux de KzHttpDataSource ; cette version ne refond pas sa politique reseau.
+Deux travailleurs, file bornee, limites sur en-tetes/manifestes/routes,
+fermeture des sockets quand le lecteur quitte le premier plan.
+Pas de URL source, MAC ou jeton dans le diagnostic utilisateur.
+Un refus HTTP amont ne declenche pas un nouvel essai logiciel de codec.
+
+CE QUI RESTE INCHANGE
+Recherche approuvee, Api, moteur de recherche, progres masque, categories,
+chaines recentes, favoris, historique de donnees, fichiers Replay*, panels,
+backend, identites de paquet et controles de signature/mise a jour.
+Le moteur alternatif ne remplace pas le chemin sain du direct ou des films.
+Le numero affiche est 3.6.3 ; le calcul monotone du versionCode est conserve.
+
+DEPENDANCE ET TAILLE
+Nouvelle dependance Maven Central epinglee :
+  org.videolan.android:libvlc-all:3.6.5
+C'est une bibliotheque native multi-ABI volumineuse : l'APK final sera plus
+gros que les versions precedentes et la premiere compilation doit la charger.
+Aucune taille d'APK final n'est annoncee tant que la CI ne l'a pas produit.
+Les noms JNI LibVLC sont conserves dans les regles R8.
+
+LICENCE DE LA BIBLIOTHEQUE
+LibVLC est annonce sous LGPL 2.1. Le texte et les notices sont inclus dans
+assets et accessibles dans l'ecran de secours via Licence. Le code de
+l'application VLC Android GPL n'est pas copie ici, seulement l'API LibVLC.
+AVANT REDISTRIBUTION D'UN APK, satisfaire les obligations LGPL : notices,
+sources exactes correspondantes de la bibliotheque/native et materiel de
+construction, possibilites de remplacement/reedition des liens requises.
+Les liens vers les projets seuls ne constituent pas une garantie de
+conformite de votre future distribution binaire.
+Projets : https://code.videolan.org/videolan/libvlcjni
+          https://code.videolan.org/videolan/vlc
+Artefact : https://repo1.maven.org/maven2/org/videolan/android/libvlc-all/3.6.5/
+
+VERIFICATIONS EFFECTUEES ET LIMITES
+- 88 methodes du projet executees sur JVM avec assertions compatibles JUnit,
+  dont 21 nouveaux tests d'eligibilite/transport local reel : absence de
+  boucle, pas de live/replay/DRM, octets preserves, URL signee preservee,
+  Range/HEAD, mauvais secret, refus d'URL arbitraire et reecriture HLS.
+- 11 controles des wrappers Media3/fenetre sur interfaces minimales,
+  et 37 controles recherche/M3U passes ; ces derniers ne prouvent pas VLC.
+- XML et perimetre de fichiers compares ; CRC de l'archive verifie.
+- Les API publiques LibVLC 3.x utilisees ont ete examinees dans un miroir
+  de sources. Le telechargement local de l'artefact exact a echoue par DNS.
+- Aucune compilation complete Kotlin/Android, integration JNI sur appareil,
+  signature d'APK ni lecture fournisseur/4K/Dolby Vision reelle validee ici.
+  La prochaine CI doit notamment valider les liaisons et le paquet natif.
+- Le logiciel ne cree pas de puissance CPU/GPU : une 4K fluide et le rendu
+  Dolby Vision natif ne sont pas garantis sur tous les boitiers. Conserver
+  la resolution source ne garantit ni le debit d'images ni le rendu HDR.
+  La bibliotheque peut exploiter une couche compatible lorsque possible,
+  mais cette version ne transcode pas le serveur et n'emule pas un decodeur
+  Dolby Vision universel. Le resultat sur les deux appareils reste a tester.
+
+INSTALLATION
+1. Extraire le ZIP a la racine du depot et remplacer les fichiers du projet,
+   y compris app/src et les nouveaux assets. Ne rien desinstaller et ne pas
+   supprimer les secrets ou les donnees de l'application. Si un autre chantier
+   a modifie le depot depuis V128, fusionner ses modifications independantes.
+2. Dans le terminal du depot :
+
+git add app/build.gradle app/proguard-rules.pro app/src A-LIRE-3.6.3-V129.txt
+git commit -m "Ajoute un moteur LibVLC de secours pour les VOD 4K Dolby - 3.6.3"
+git push
+
+3. Attendre la NOUVELLE compilation GitHub verte, puis recuperer son
+   app-release-signed.apk. Installer en mise a jour sans desinstaller.
+4. Reessayer le meme film. Si Media3 echoue encore, le titre de l'ecran
+   de secours indique LibVLC ; ce passage doit etre visible, sans installer
+   une autre application. Retour permet de revenir a la fiche du film.
+5. Verifier ensuite avance/recul, retour sur la fiche et reprise du film.
+   La lecture reelle doit etre confirmee : cette livraison n'est pas une
+   affirmation que le film a deja fonctionne sur votre materiel.

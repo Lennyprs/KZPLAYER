@@ -760,6 +760,7 @@ class PlayerActivity : AppCompatActivity() {
                     return
                 }
                 if(recoverHeavyVod(error,p))return
+                if(startVlcFallback(error,p))return
                 val videoFailure=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.takeIf {failedRendererTrackType(it)==androidx.media3.common.C.TRACK_TYPE_VIDEO}
                 val failedFormat=videoFailure?.rendererFormat?:p.videoFormat
                 val heavyDecodeProblem=videoFailure!=null&&VodVideoPolicy.decodeFailure(error.errorCodeName)&&
@@ -834,6 +835,39 @@ class PlayerActivity : AppCompatActivity() {
         if(exo.type!=androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER)
             return androidx.media3.common.C.TRACK_TYPE_UNKNOWN
         return androidx.media3.common.MimeTypes.getTrackType(exo.rendererFormat?.sampleMimeType)
+    }
+
+    private fun startVlcFallback(error:PlaybackException,p:ExoPlayer):Boolean {
+        val exo=error as? androidx.media3.exoplayer.ExoPlaybackException?:return false
+        val f=exo.rendererFormat?:p.videoFormat?:return false
+        if(!VodVideoPolicy.alternateEngine(isLiveMode,isReplayMode,intent.getBooleanExtra("vlcFallbackAttempted",false),f.drmInitData!=null,
+            failedRendererTrackType(error)==androidx.media3.common.C.TRACK_TYPE_VIDEO,error.errorCodeName,f.sampleMimeType,f.width,f.height,intent.getIntExtra("vodRecoveryCount",0)>0))return false
+        if(!isVod||isFinishing||isDestroyed)return false
+        intent.putExtra("vlcFallbackAttempted",true)
+        recoveryHandler.removeCallbacks(startupWatchdog)
+        val owner=Session.current
+        val oldPosition=WatchHistory.all(this).firstOrNull {it.title==watchTitle&&(owner==null||it.playlistId==owner.id)}?.positionMs?:0L
+        val position=if(p.currentPosition>0L)p.currentPosition else maxOf(intent.getLongExtra("vodRecoveryPosition",0L),oldPosition)
+        saveWatchProgress()
+        p.release();player=null;playerView.player=null
+        closePlaybackError()
+        lifecycleScope.launch {
+            val fresh=if(owner?.type=="stalker"&&watchSourceCmd.isNotBlank())try{Api.stalkerLink(owner,watchSourceCmd,"movie")}catch(_:Exception){null}else watchUrl
+            if(isFinishing||isDestroyed)return@launch
+            if(fresh.isNullOrBlank()){
+                showPlaybackError("Lecture de secours indisponible","Le portail n'a pas renouvelé le lien du film.")
+            }else{
+                val next=android.content.Intent(this@PlayerActivity,VlcVodActivity::class.java)
+                intent.extras?.let {next.putExtras(it)}
+                next.putExtra("url",fresh).putExtra("title",watchTitle).putExtra("logo",watchLogo)
+                    .putExtra("historyKind",watchKind).putExtra("historySourceCmd",watchSourceCmd)
+                    .putExtra("historySourceStreamId",watchSourceStreamId).putExtra("historySourceContainerExt",watchSourceContainerExt)
+                    .putExtra("vlcFallback",true).putExtra("vlcResumeMs",position).putExtra("vlcOwnerPlaylistId",owner?.id.orEmpty())
+                    .putExtra("vlcSubtitleUrl",currentSubUrl.orEmpty())
+                try{startActivity(next);finish()}catch(_:Exception){showPlaybackError("Lecture de secours indisponible","Le moteur alternatif n'a pas pu être ouvert.")}
+            }
+        }
+        return true
     }
 
     private fun recoverHeavyVod(error:PlaybackException,p:ExoPlayer):Boolean {

@@ -12,3 +12,7 @@
 }
 -keep class com.kzplayer.app.TrailerActivity { *; }
 -keep class com.kzplayer.app.TrailerActivity$Bridge { *; }
+
+# LibVLC Java names/fields are used by native JNI.
+-keep class org.videolan.libvlc.** { *; }
+-keep class org.videolan.libvlc.interfaces.** { *; }
