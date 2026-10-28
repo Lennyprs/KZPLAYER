@@ -1,0 +1,86 @@
+KZ PLAYER — 3.7.1 / V136 — OUVERTURE DES FLUX VOD
+================================================
+Sources complètes, basées sur 3.7.0 V135. Media3 seul, sans VLC.
+Cette livraison traite une erreur d'identification/ouverture du flux, pas
+un décodage universel de tous les profils 4K/Dolby Vision.
+
+CE QUE MONTRE LA PHOTO
+---------------------
+ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED, piste inconnue, format 0 x 0,
+décodeur non initialisé : l'ouverture échoue avant l'identification de la
+piste vidéo. Ce n'est pas une preuve que la 4K dépasse les capacités du boîtier.
+La photo seule n'identifie pas le contenu renvoyé par le serveur.
+La piste d'un manifeste mal orienté est une hypothèse, pas la cause établie.
+
+CORRECTION RÉELLE
+----------------
+- Observation passive et bornée des 4096 premiers octets déjà lus par Media3
+  sur la connexion de lecture du film/épisode. Pas de HEAD, GET de sonde,
+  prélecture, réécriture ou modification des octets envoyés au lecteur.
+- Signature HLS/DASH réellement observée + vraie erreur d'analyse : correction
+  du type de source et une seule réouverture possible de la même URL.
+  Aucun remplacement par un résultat de recherche ou un autre film.
+- Pas de réouverture si le type HLS/DASH est déjà explicitement sélectionné
+  ou déduit de l'extension correspondante. Aucun carrousel de formats supposés.
+- Ajout du module DASH Media3 1.4.1, à côté du module HLS déjà présent.
+- Les segments, sous-titres et requêtes de seek au milieu du fichier ne servent
+  pas à identifier le conteneur racine. Les callbacks de l'ancien épisode
+  ne peuvent pas remplacer le diagnostic du nouvel épisode.
+- En cas d'échec, diagnostic limité à une étiquette prédéfinie : HLS, DASH,
+  MP4/ISO-BMFF, Matroska/WebM, MPEG-TS, AVI, FLV, HTML, JSON, réponse vide ou
+  non identifiée. Aucun octet brut, URL, jeton, en-tête ou identifiant affiché
+  ou enregistré par ce composant. Les signatures donnent une indication,
+  pas une preuve de validité complète du fichier.
+- HTML/JSON/vide/inconnu ne déclenchent aucune prétendue conversion vidéo.
+- Pipeline vidéo/audio, réglages FHD, FFmpeg audio, préférences <=1080p,
+  API fournisseurs, recherche approuvée, caches de catégories V134, licences,
+  favoris, historique, identité, signature et workflows conservés.
+- Aucun changement du backend ou des panneaux Cloudflare.
+
+LIMITES À NE PAS CONFONDRE AVEC UNE CORRECTION VALIDÉE SUR LE BOÎTIER
+-----------------------------------------------------------------
+Si un serveur retourne du HLS derrière une URL de fichier, la nouvelle logique
+peut corriger ce cas. Si le MKV/MP4 lui-même comporte une caractéristique non
+prise en charge, ou si la piste vidéo dépasse les décodeurs réellement présents,
+ce changement ne crée pas de décodeur et ne répare pas le fichier.
+Il n'y a ni émulateur de décodage, ni transcodage, ni conversion Dolby vers SDR.
+Une piste HD/FHD est sélectionnable seulement si elle existe dans le flux.
+FFmpeg conservé dans Media3 est une extension audio, pas un transcodeur vidéo.
+Ni compatibilité universelle, ni lecture instantanée/fluidité parfaite garanties.
+La source réelle de la photo n'a pas été ouverte dans cet environnement.
+
+INSTALLATION
+------------
+1. Extraire ce ZIP à la racine du dépôt local KZPLAYER. Remplacer les fichiers.
+   Utiliser le dossier contenant app, tools, .github et build.gradle.
+2. À cette racine, exécuter :
+
+   python3 tools/release/remove_libvlc_v135.py
+
+   Ce script actualisé accepte 3.7.1 et supprime uniquement les 14 fichiers
+   VLC/helpers/tests retirés depuis V135. C'est indispensable si le dépôt
+   contient encore les sources 3.6.7. Sans ces suppressions, enlever seulement
+   la dépendance VLC peut casser la compilation. Le script est relançable.
+3. Puis exactement ces trois commandes Git :
+
+   git add -A app tools/release/remove_libvlc_v135.py A-LIRE-3.7.1-V136.txt
+   git commit -m "Corrige l identification des flux VOD - 3.7.1"
+   git push
+
+4. Attendre la réussite complète du workflow Android officiel GitHub.
+5. Installer le nouvel APK officiel en mise à jour, sans désinstaller KZ PLAYER
+   et sans effacer les données. Ne pas installer un APK personnalisé à la place
+   de l'application principale. Signature et calcul CI du versionCode inchangés.
+   Les anciens guides dans le ZIP sont historiques : suivre celui-ci.
+
+VÉRIFICATIONS
+-------------
+116 méthodes de tests JVM locales (dont 38 nouveaux tests d'observation,
+transparence des lectures et règles de réouverture) et 37 contrôles de recherche
+Java passés. 137 XML analysés. Contrôles de portée et extraction/nettoyage sur
+une copie des anciennes sources effectués.
+Les interfaces Android/Media3/JUnit utilisées pour ces tests sont des fixtures
+locales minimales, pas un SDK Android ou les binaires natifs du boîtier.
+Non validés ici : compilation Kotlin/Android complète, APK signé, chargement
+JNI FFmpeg, ouverture réelle du flux de la photo, son/image/4K/Dolby sur X96Q,
+ni succès du workflow GitHub. Aucun push n'a été effectué depuis cet environnement.

@@ -27,6 +27,9 @@ import kotlinx.coroutines.launch
 class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private var activeVideoDecoderName=""
+    private val vodSourceHints=VodSourceHints.State()
+    private var vodContainerRetried=false
+    private var vodContainerMime=""
     private var compatibleTrackRetried=false
     private var playbackOwnerId=""
 
@@ -440,7 +443,7 @@ class PlayerActivity : AppCompatActivity() {
                     intent.getLongExtra("replayStartMs", 0L),
                     intent.getLongExtra("replayEndMs", 0L)
                 )
-            } else sourceFactory
+            } else if(isVod&&!isReplayMode) VodSourceHints.Factory(sourceFactory,vodSourceHints) else sourceFactory
         val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(checkedSourceFactory)
             .setLoadErrorHandlingPolicy(errPolicy)
 
@@ -665,6 +668,7 @@ class PlayerActivity : AppCompatActivity() {
                         .show()
                     return
                 }
+                if(recoverVodContainer(error,p))return
                 if(recoverCompatibleTrack(error,p))return
                 if (isLiveMode && candIdx < candidates.size - 1) {
                     candIdx++
@@ -704,7 +708,8 @@ class PlayerActivity : AppCompatActivity() {
                     val fmt=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat?:p.videoFormat
                     val renderer=failedRendererTrackType(error)
                     val track=when(renderer){androidx.media3.common.C.TRACK_TYPE_VIDEO->"video";androidx.media3.common.C.TRACK_TYPE_AUDIO->"audio";else->"inconnue"}
-                    val diag="Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\nMedia3 utilise les décodeurs réellement disponibles sur cet appareil. La préférence HD/FHD choisit uniquement une piste fournie par la source. Aucun transcodage ni émulateur vidéo n'est intégré."
+                    val sourceInfo=if(!isLiveMode&&!isReplayMode)"Contenu reçu : ${vodSourceHints.kind.label}\n" else ""
+                    val diag=sourceInfo+"Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\nMedia3 utilise les décodeurs réellement disponibles sur cet appareil. La préférence HD/FHD choisit uniquement une piste fournie par la source. Aucun transcodage ni émulateur vidéo n'est intégré."
 
                     showPlaybackError("Lecture impossible : $detail",diag)
                 }
@@ -726,6 +731,28 @@ class PlayerActivity : AppCompatActivity() {
         if(exo.type!=androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER)
             return androidx.media3.common.C.TRACK_TYPE_UNKNOWN
         return androidx.media3.common.MimeTypes.getTrackType(exo.rendererFormat?.sampleMimeType)
+    }
+
+    // A routing correction, not a codec test: only a manifest signature actually read
+    // on the playback connection can select HLS/DASH, once, on the exact same URL.
+    private fun recoverVodContainer(error:PlaybackException,p:ExoPlayer):Boolean {
+        if(isLiveMode||isReplayMode||player!==p||isFinishing||isDestroyed)return false
+        val path=Uri.parse(watchUrl).path.orEmpty()
+        val alreadyUsed=vodContainerMime.ifBlank {when {
+            path.endsWith(".m3u8",true)->"application/x-mpegURL"
+            path.endsWith(".mpd",true)->"application/dash+xml"
+            else->""
+        }}
+        val mime=VodSourceHints.retryMime(error.errorCodeName,vodSourceHints.kind,alreadyUsed,vodContainerRetried)
+        if(mime.isBlank())return false
+        vodContainerRetried=true;vodContainerMime=mime
+        val position=p.currentPosition.coerceAtLeast(0L)
+        val wantsPlay=p.playWhenReady
+        p.setMediaItem(buildMediaItem(watchUrl))
+        if(position>0L)p.seekTo(position)
+        p.prepare()
+        p.playWhenReady=wantsPlay
+        return true
     }
 
     // No preflight playback or decoder carousel. Only after a real video error,
@@ -762,6 +789,7 @@ class PlayerActivity : AppCompatActivity() {
         if (isReplayMode) demarrageOk = false
         // On laisse ExoPlayer auto-detecter le format (extension + Content-Type + redirections).
         // Forcer le MIME pouvait casser un .ts qui redirige en realite vers du HLS.
+        if(!isLiveMode&&!isReplayMode)vodSourceHints.begin(u)
         p.setMediaItem(buildMediaItem(u))
         if (isReplayMode) {
             val resume = intent.getLongExtra("replayResumeMs", 0L)
@@ -883,6 +911,7 @@ class PlayerActivity : AppCompatActivity() {
 
     // Bascule le lecteur en cours sur un nouveau flux VOD (episode suivant) sans recreer l'activite.
     private fun switchToVod(url: String, title: String, logo: String) {
+        vodContainerRetried=false;vodContainerMime=""
         compatibleTrackRetried=false
         intent.removeExtra("vodHeaderRetried")
         intent.removeExtra("vodHttpRetried")
@@ -914,6 +943,7 @@ class PlayerActivity : AppCompatActivity() {
     // Construit le MediaItem en y greffant, si demande, une piste de sous-titres externe.
     private fun buildMediaItem(u: String): MediaItem {
         val b = MediaItem.Builder().setUri(Uri.parse(u))
+        if(!isLiveMode&&!isReplayMode&&vodContainerMime.isNotBlank())b.setMimeType(vodContainerMime)
         if (isReplayMode) {
             val mime = when {
                 intent.getStringExtra("replayHlsRetryUrl") == u -> "application/x-mpegURL"
