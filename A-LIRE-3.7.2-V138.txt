@@ -1,0 +1,90 @@
+KZ PLAYER — 3.7.2 / V138 — COMPATIBILITÉ AUDIO FILMS ET SÉRIES
+===========================================================
+Sources complètes basées sur 3.7.1 avec le correctif de tests V137 conservé.
+Cette livraison vise la perte de son signalée sur les films HD/FHD.
+Elle ne constitue PAS une correction démontrée du décodage vidéo Dolby Vision.
+
+CORRECTION AUDIO RÉELLE
+----------------------
+Films/séries uniquement, pas le direct ni le replay :
+- Extension FFmpeg audio existante préférée quand elle est disponible et
+  prend en charge la piste. Le décodeur audio Media3 ordinaire reste présent.
+  Aucun téléchargement de codec ni passage VLC.
+- Sortie PCM décodée dans l'application, au lieu d'envoyer directement des
+  données AC3/EAC3/DTS encodées à une télévision qui pourrait ne pas les lire.
+  Pas d'offload audio compressé pour cette sortie de compatibilité VOD.
+- Traitement PCM 16 bits, sans sortie PCM flottante directe.
+- Sources mono et stéréo laissées dans leur nombre de canaux d'origine.
+- Sources PCM standard de 3 à 8 canaux mixées en stéréo avec le processeur
+  ChannelMixingAudioProcessor de Media3. Le centre contenant souvent les
+  dialogues est réparti vers les deux enceintes, pas simplement supprimé.
+  Gains normalisés pour éviter une saturation à pleine échelle ; le volume
+  perçu peut différer du multicanal d'origine. Pas de spatialisation Atmos.
+- Activation explicite du type de piste audio au démarrage de la VOD.
+- Dans la roue dentée > Audio, ajout d'Automatique (recommandé), pour retirer
+  un choix manuel de piste sans relancer le film.
+- Même réglage vidéo Media3, même détection HLS/DASH et même reprise bornée
+  de source que dans 3.7.1. Aucun nouveau décodeur vidéo ou profil falsifié.
+
+CE QUE L'ON SAIT ET CE QUE L'ON NE SAIT PAS
+----------------------------------------
+L'absence de son HD/FHD est signalée par l'utilisateur. Sa cause précise n'est
+pas établie par la photo d'erreur vidéo : aucun relevé du format audio du film
+silencieux ni de la sortie HDMI n'a été fourni. Cette version traite le chemin
+audio compressé/multicanal, pas une cause silencieuse prétendument prouvée.
+Elle ne force pas le volume système et ne désactive pas volontairement les
+contrôles de volume de la télévision ou du boîtier.
+
+La dernière photo indique : MKV reconnu, piste video/dolby-vision, chaîne de
+codec hev1.08.06, 3636 x 2160, échec du décodeur OMX.allwinner.video.decoder.hevc
+sur Google X96Q. Cet échec survient au décodage vidéo, contrairement à l'ancien
+message PARSING_CONTAINER_UNSUPPORTED. Il ne prouve pas que toute 4K est
+incompatible, mais la préférence 1080p n'a pas rendu cette piste décodable.
+Cette correction AUDIO ne doit pas être présentée comme une solution à ce
+problème VIDÉO. Pas d'émulateur, de transcodage vidéo ou de conversion DV/SDR.
+
+PRÉSERVÉ
+--------
+Media3 seul, FFmpeg audio existant, recherche approuvée, données et listes,
+catégories et cache V134, favoris, historique, licences, fournisseurs,
+configuration des chaînes/replay, panneaux, backend, identités d'applications,
+signature et workflows. Les 10 tests Android déplacés par V137 restent dans
+src/androidTest ; ils ne sont pas réintroduits dans les tests JVM.
+
+INSTALLATION
+------------
+1. Extraire ce ZIP complet à la racine du dépôt local KZPLAYER, dans le dossier
+   contenant .github, app, tools et build.gradle. Accepter les remplacements.
+2. Depuis cette racine, exécuter le nettoyage des anciens fichiers VLC si
+   ceux-ci sont encore présents (le script est relançable) :
+
+   python3 tools/release/remove_libvlc_v135.py
+
+3. Puis exactement ces trois commandes Git :
+
+   git add -A app tools/release/remove_libvlc_v135.py A-LIRE-3.7.2-V138.txt
+   git commit -m "Securise le son PCM des films et series - 3.7.2"
+   git push
+
+4. Attendre la réussite complète du workflow Android officiel GitHub.
+5. Installer le nouvel APK officiel en mise à jour, sans désinstaller et sans
+   effacer les données. Ne pas remplacer l'app principale par un APK de marque
+   différente. Signature et calcul automatique du versionCode inchangés.
+Aucune intervention Apps Script/Cloudflare nécessaire. Suivre ce guide et non
+les guides historiques des versions précédentes présents dans le ZIP.
+
+VÉRIFICATIONS ET LIMITES
+-----------------------
+- 126 méthodes de tests JVM locales, dont 20 nouvelles sur le mixage des
+  canaux : centre, surrounds, LFE, mono/stéréo, symétrie et saturation.
+- 37 contrôles de recherche Java passés.
+- 17 vérifications de la nouvelle fabrique audio exécutée avec des signatures
+  Android/Media3 minimales locales : PCM, absence d'offload, priorité audio et
+  indépendance des processeurs entre lecteurs. Ce ne sont pas des tests sonores.
+- 137 fichiers XML analysés, portée des changements contrôlée, chemin de
+  sélection/reprise vidéo et reprise d'erreur replay conservés octet pour octet.
+
+Non validés ici : compilation Kotlin/Android complète, chargement JNI FFmpeg,
+restitution sonore réelle sur X96Q/télévision/HDMI, tests Android instrumentés,
+lecture et fluidité 4K/Dolby Vision. Aucun push, build signé ou installation
+réalisé ici. Ne pas annoncer une compatibilité parfaite sur tous les appareils.

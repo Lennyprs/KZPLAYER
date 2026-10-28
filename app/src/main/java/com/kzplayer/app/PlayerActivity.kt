@@ -450,7 +450,8 @@ class PlayerActivity : AppCompatActivity() {
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
         // Android choisit le decodeur adapte au firmware, avec repli natif si
         // l initialisation echoue. FFmpeg reste uniquement un secours audio.
-        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
+        val renderersFactory = (if(isVod&&!isReplayMode) VodAudioRenderersFactory(this)
+            else androidx.media3.exoplayer.DefaultRenderersFactory(this))
             .setEnableDecoderFallback(true)
             // v413 : evite le gel MediaCodec "premiere frame + son uniquement"
             // observe sur certains boitiers avec la file asynchrone Android.
@@ -518,6 +519,9 @@ class PlayerActivity : AppCompatActivity() {
             // avec peu de canaux (stereo) plutot qu'une piste 5.1/DTS que le boitier ne sort pas.
             var vodParams = p.trackSelectionParameters.buildUpon()
                 .setMaxAudioChannelCount(2)
+            if(!isReplayMode)vodParams=vodParams
+                .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_AUDIO,false)
+                .clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_AUDIO)
             // Series multi-langues : on selectionne automatiquement le francais quand il existe.
             // C'est une PREFERENCE (pas une contrainte) : si le francais est absent, ExoPlayer garde
             // la piste par defaut, donc jamais de perte de son. Codes fr / fra / fre couverts.
@@ -989,6 +993,14 @@ class PlayerActivity : AppCompatActivity() {
         }
         val labels = ArrayList<String>()
         val actions = ArrayList<() -> Unit>()
+        if(!isLiveMode&&!isReplayMode){
+            labels.add("Automatique (recommandé)")
+            actions.add {
+                p.trackSelectionParameters=p.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_AUDIO)
+                    .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_AUDIO,false).build()
+            }
+        }
         groups.forEachIndexed { gi, g ->
             for (ti in 0 until g.length) {
                 val fmt = g.getTrackFormat(ti)

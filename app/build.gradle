@@ -29,7 +29,7 @@ android {
             vcCode = runNum + 400
         }
         versionCode vcCode
-        versionName "3.7.1"
+        versionName "3.7.2"
     }
 
     buildFeatures { buildConfig true }
