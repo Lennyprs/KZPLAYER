@@ -17,7 +17,7 @@ public class VlcFallbackTest {
  @Test public void noDrmBypass(){assertFalse(eligible(false,false,false,true,true,"ERROR_CODE_DECODING_FAILED","video/dolby-vision",3840,2160,false));}
  @Test public void noAudioReroute(){assertFalse(eligible(false,false,false,false,false,"ERROR_CODE_DECODING_FAILED","audio/eac3",3840,2160,false));}
  @Test public void noHttpAuthenticationReroute(){assertFalse(eligible(false,false,false,false,true,"ERROR_CODE_IO_BAD_HTTP_STATUS","video/hevc",3840,2160,false));}
- @Test public void noOrdinaryFullHdReroute(){assertFalse(eligible(false,false,false,false,true,"ERROR_CODE_DECODING_FAILED","video/avc",1920,1080,false));}
+ @Test public void fullHdVideoFailureMayUseAnotherEngine(){assertTrue(eligible(false,false,false,false,true,"ERROR_CODE_DECODING_FAILED","video/avc",1920,1080,false));}
  @Test public void existingHeavyRecoveryMayContinueAfterLowerTrackFails(){assertTrue(eligible(false,false,false,false,true,"ERROR_CODE_DECODING_FAILED","video/avc",1920,1080,true));}
  @Test public void credentialsStayOnExactOrigin(){assertTrue(VlcStreamBridge.sameOrigin("https://example.invalid/a","https://example.invalid:443/b"));assertFalse(VlcStreamBridge.sameOrigin("https://example.invalid/a","http://example.invalid/b"));assertFalse(VlcStreamBridge.sameOrigin("https://example.invalid/a","https://other.invalid/b"));}
  @Test public void noLocalFileManifestChildren(){assertFalse(VlcStreamBridge.network("file:///private/file"));assertFalse(VlcStreamBridge.network("content://private/file"));assertFalse(VlcStreamBridge.network("http://"));}

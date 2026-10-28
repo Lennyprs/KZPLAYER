@@ -25,8 +25,9 @@ public final class VodVideoPolicy {
   return codec.equals(source)&&("video/hevc".equals(source)||"video/avc".equals(source)||"video/av01".equals(source)||"video/x-vnd.on2.vp9".equals(source));
  }
  public static boolean alternateEngine(boolean live,boolean replay,boolean tried,boolean drm,boolean video,String code,String mime,int width,int height,boolean recovering){
-  return !live&&!replay&&!tried&&!drm&&video&&decodeFailure(code)&&(heavy(mime,width,height)||recovering);
+  return !live&&!replay&&!tried&&!drm&&video&&decodeFailure(code);
  }
+ public static boolean sameDefinition(int sourceWidth,int sourceHeight,int width,int height){return (sourceWidth<=0||width>=sourceWidth)&&(sourceHeight<=0||height>=sourceHeight);}
  public static boolean heavy(String mime,int width,int height){return "video/dolby-vision".equals(mime)||width>=3000||height>=1600;}
  public static boolean decodeFailure(String code){return "ERROR_CODE_DECODING_FAILED".equals(code)||"ERROR_CODE_DECODER_INIT_FAILED".equals(code)||"ERROR_CODE_DECODING_FORMAT_UNSUPPORTED".equals(code)||"ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES".equals(code);}
 }

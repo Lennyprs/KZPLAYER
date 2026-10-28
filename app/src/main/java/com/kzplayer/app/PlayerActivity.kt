@@ -54,6 +54,26 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var playerView: PlayerView
     private var candidates: List<String> = emptyList()
     private var isReplayMode = false
+    private var vodForeground=false
+    private var resumeVodAfterStop=false
+    private val vodFrameHealth=VodFrameHealth()
+    private val vodImageWatchdog=object:Runnable {
+        override fun run(){
+            val p=player?:return
+            if(isLiveMode||isReplayMode||isFinishing||isDestroyed)return
+            val f=p.videoFormat
+            val counters=p.videoDecoderCounters
+            if(f!=null&&f.drmInitData==null&&counters!=null){
+                counters.ensureUpdated()
+                val nearEnd=p.duration>0&&p.duration-p.currentPosition<2000
+                val action=vodFrameHealth.sample(SystemClock.elapsedRealtime(),vodForeground&&p.isPlaying&&!nearEnd,
+                    p.playbackState!=Player.STATE_READY,false,counters.renderedOutputBufferCount.toLong(),
+                    counters.droppedBufferCount.toLong(),p.currentPosition,f.frameRate)
+                if(action!=VodFrameHealth.OK&&startVlcFallback(null,p))return
+            }
+            recoveryHandler.postDelayed(this,1000)
+        }
+    }
     private var replayQuotaShown = false
     private fun showReplayRateLimit() {
         recoveryHandler.removeCallbacks(replayStartupWatchdog)
@@ -168,6 +188,11 @@ class PlayerActivity : AppCompatActivity() {
     private val startupWatchdog = object : Runnable {
         override fun run() {
             val p = player ?: return
+            if(!isLiveMode&&!isReplayMode){
+                recoveryHandler.removeCallbacks(vodImageWatchdog)
+                recoveryHandler.postDelayed(vodImageWatchdog,1000)
+                return
+            }
             if (demarrageOk) return
             val demarre = p.playbackState == Player.STATE_READY &&
                 (p.videoSize.width > 0 || p.currentPosition > 0L)
@@ -398,6 +423,7 @@ class PlayerActivity : AppCompatActivity() {
             pathOnly.endsWith(".mov") || pathOnly.endsWith(".flv")
         val isVod = mode == "vod" || looksVod
         isLiveMode = !isVod
+        if(isVod&&!isReplayMode)vodUaIdx=intent.getIntExtra("vodUaIndex",0).coerceIn(0,UAS_VOD.size-1)
         if (isLiveMode) {
             // Chaines live : pas de boutons play/pause. On garde juste la barre du haut (titre + retour).
             playerView.useController = false
@@ -521,7 +547,7 @@ class PlayerActivity : AppCompatActivity() {
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
         // Android choisit le decodeur adapte au firmware, avec repli natif si
         // l initialisation echoue. FFmpeg reste uniquement un secours audio.
-        val renderersFactory = (if(isVod&&!isReplayMode) VodRenderersFactory(this){description->videoDecoderCandidates=description} else androidx.media3.exoplayer.DefaultRenderersFactory(this))
+        val renderersFactory = (if(isVod&&!isReplayMode&&intent.getIntExtra("vodRecoveryCount",0)>0) VodRenderersFactory(this){description->videoDecoderCandidates=description} else androidx.media3.exoplayer.DefaultRenderersFactory(this))
             .setEnableDecoderFallback(true)
             // v413 : evite le gel MediaCodec "premiere frame + son uniquement"
             // observe sur certains boitiers avec la file asynchrone Android.
@@ -660,6 +686,7 @@ class PlayerActivity : AppCompatActivity() {
             .coerceIn(0, candidates.lastIndex.coerceAtLeast(0)) else 0
         p.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                if(player!==p||isFinishing||isDestroyed)return
                 val target=intent.getStringExtra("vodRecoveryTrack").orEmpty()
                 if(!isLiveMode&&!isReplayMode&&!vodTrackOverrideApplied&&target.isNotBlank()){
                     for(g in tracks.groups)if(g.type==androidx.media3.common.C.TRACK_TYPE_VIDEO)for(i in 0 until g.length){
@@ -684,6 +711,7 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if(player!==p||isFinishing||isDestroyed)return
                 // Certains VOD/episodes chargent bien la duree (STATE_READY) mais restent figes
                 // sans demarrer automatiquement sur Android TV. On force le play au moment READY.
                 if (playbackState == Player.STATE_READY && !didRestorePosition && (watchKind == "movie" || watchKind == "series")) {
@@ -715,6 +743,10 @@ class PlayerActivity : AppCompatActivity() {
                     saveWatchProgress(forceCompleted = true)
                     playNextEpisodeIfAny()
                 }
+            }
+
+            override fun onEvents(source:Player,events:Player.Events){
+                if(player===p&&events.contains(Player.EVENT_POSITION_DISCONTINUITY))vodFrameHealth.reset()
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -803,6 +835,7 @@ class PlayerActivity : AppCompatActivity() {
                             }
                             if (vodUaIdx < UAS_VOD.size - 1) {
                                 vodUaIdx++
+                                intent.putExtra("vodUaIndex",vodUaIdx)
                                 reessai401Fait = false
                                 try { recreate(); return } catch (e: Throwable) {}
                             }
@@ -837,13 +870,16 @@ class PlayerActivity : AppCompatActivity() {
         return androidx.media3.common.MimeTypes.getTrackType(exo.rendererFormat?.sampleMimeType)
     }
 
-    private fun startVlcFallback(error:PlaybackException,p:ExoPlayer):Boolean {
-        val exo=error as? androidx.media3.exoplayer.ExoPlaybackException?:return false
-        val f=exo.rendererFormat?:p.videoFormat?:return false
+    private fun startVlcFallback(error:PlaybackException?,p:ExoPlayer):Boolean {
+        if(isLiveMode||isReplayMode||isFinishing||isDestroyed||player!==p)return false
+        if(watchKind!="movie"&&watchKind!="series")return false
+        val exo=error as? androidx.media3.exoplayer.ExoPlaybackException
+        val f=exo?.rendererFormat?:p.videoFormat?:return false
+        val video=if(error==null)androidx.media3.common.MimeTypes.isVideo(f.sampleMimeType) else failedRendererTrackType(error)==androidx.media3.common.C.TRACK_TYPE_VIDEO
         if(!VodVideoPolicy.alternateEngine(isLiveMode,isReplayMode,intent.getBooleanExtra("vlcFallbackAttempted",false),f.drmInitData!=null,
-            failedRendererTrackType(error)==androidx.media3.common.C.TRACK_TYPE_VIDEO,error.errorCodeName,f.sampleMimeType,f.width,f.height,intent.getIntExtra("vodRecoveryCount",0)>0))return false
-        if(isLiveMode||isReplayMode||isFinishing||isDestroyed)return false
+            video,error?.errorCodeName?:"ERROR_CODE_DECODING_FAILED",f.sampleMimeType,f.width,f.height,intent.getIntExtra("vodRecoveryCount",0)>0))return false
         intent.putExtra("vlcFallbackAttempted",true)
+        recoveryHandler.removeCallbacks(vodImageWatchdog)
         recoveryHandler.removeCallbacks(startupWatchdog)
         val owner=Session.current
         val oldPosition=WatchHistory.all(this).firstOrNull {it.title==watchTitle&&(owner==null||it.playlistId==owner.id)}?.positionMs?:0L
@@ -855,7 +891,7 @@ class PlayerActivity : AppCompatActivity() {
             val fresh=if(owner?.type=="stalker"&&watchSourceCmd.isNotBlank())try{Api.stalkerLink(owner,watchSourceCmd,"movie")}catch(_:Exception){null}else watchUrl
             if(isFinishing||isDestroyed)return@launch
             if(fresh.isNullOrBlank()){
-                showPlaybackError("Lecture de secours indisponible","Le portail n'a pas renouvelé le lien du film.")
+                showPlaybackError("Lecture indisponible","Le portail n'a pas renouvelé le lien du film.")
             }else{
                 val next=android.content.Intent(this@PlayerActivity,VlcVodActivity::class.java)
                 intent.extras?.let {next.putExtras(it)}
@@ -864,7 +900,8 @@ class PlayerActivity : AppCompatActivity() {
                     .putExtra("historySourceStreamId",watchSourceStreamId).putExtra("historySourceContainerExt",watchSourceContainerExt)
                     .putExtra("vlcFallback",true).putExtra("vlcResumeMs",position).putExtra("vlcOwnerPlaylistId",owner?.id.orEmpty())
                     .putExtra("vlcSubtitleUrl",currentSubUrl.orEmpty())
-                try{startActivity(next);finish()}catch(_:Exception){showPlaybackError("Lecture de secours indisponible","Le moteur alternatif n'a pas pu être ouvert.")}
+                    .putExtra("vlcHeavy",VodVideoPolicy.heavy(f.sampleMimeType,f.width,f.height))
+                try{startActivity(next);finish()}catch(_:Exception){showPlaybackError("Lecture indisponible","La lecture n'a pas pu être ouverte.")}
             }
         }
         return true
@@ -884,9 +921,9 @@ class PlayerActivity : AppCompatActivity() {
         val alternate=ArrayList<androidx.media3.common.Format>()
         if(count==0)for(g in p.currentTracks.groups)if(g.type==androidx.media3.common.C.TRACK_TYPE_VIDEO)for(i in 0 until g.length){
             val candidate=g.getTrackFormat(i)
-            if(g.isTrackSupported(i)&&videoKey(candidate)!=videoKey(f))alternate.add(candidate)
+            if(g.isTrackSupported(i)&&videoKey(candidate)!=videoKey(f)&&VodVideoPolicy.sameDefinition(f.width,f.height,candidate.width,candidate.height))alternate.add(candidate)
         }
-        val track=alternate.sortedWith(compareBy<androidx.media3.common.Format> {if(it.sampleMimeType==androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION)1 else 0}.thenBy {if(it.width in 1..1920)0 else 1}).firstOrNull()
+        val track=alternate.sortedWith(compareBy<androidx.media3.common.Format> {if(it.sampleMimeType==androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION)1 else 0}.thenByDescending {it.width}).firstOrNull()
         val base=androidx.media3.exoplayer.mediacodec.MediaCodecUtil.getAlternativeCodecMimeType(f)
         if(track==null){
             if(failed.isNotBlank()&&failed !in rejected)rejected.add(failed)
@@ -945,6 +982,11 @@ class PlayerActivity : AppCompatActivity() {
         p.playWhenReady = true
         p.prepare()
         p.play()
+        if(!isLiveMode&&!isReplayMode){
+            vodFrameHealth.reset()
+            recoveryHandler.removeCallbacks(vodImageWatchdog)
+            recoveryHandler.postDelayed(vodImageWatchdog,1000)
+        }
         if (isReplayMode) {
             recoveryHandler.removeCallbacks(replayStartupWatchdog)
             recoveryHandler.postDelayed(replayStartupWatchdog, 20000)
@@ -1054,6 +1096,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun switchToVod(url: String, title: String, logo: String) {
         val hadVideoRecovery=intent.getIntExtra("vodRecoveryCount",0)>0
         intent.removeExtra("vodRecoveryPosition")
+        intent.removeExtra("vodUaIndex")
         intent.removeExtra("vodRecoveryTrack")
         intent.removeExtra("vodRecoveryCount")
         vodTrackOverrideApplied=false
@@ -1426,14 +1469,18 @@ class PlayerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         LicenseEnforcer.resume(this)
+        vodForeground=true;vodFrameHealth.reset()
+        if(resumeVodAfterStop&&!isLiveMode&&!isReplayMode){resumeVodAfterStop=false;player?.play()}
     }
 
     override fun onPause() {
+        vodForeground=false;vodFrameHealth.reset()
         LicenseEnforcer.pause(this)
         super.onPause()
     }
 
     override fun onStop() {
+        if(!isLiveMode&&!isReplayMode)resumeVodAfterStop=player?.playWhenReady==true&&!isFinishing
         closePlaybackError()
         saveWatchProgress()
         super.onStop()

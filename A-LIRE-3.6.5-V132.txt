@@ -1,0 +1,50 @@
+KZ PLAYER 3.6.5 — V132 — LECTEUR UNIFIE ET REPRISES VIDEO
+
+INSTALLATION DU CODE
+1. Extraire ce ZIP dans le dossier local du dépôt KZPLAYER, celui contenant app/ et .github/. Remplacer les fichiers existants, sans créer un dossier supplémentaire dans le dépôt.
+2. Ne pas désinstaller l'application : les données, listes, favoris et historiques restent dans leur stockage existant.
+3. Depuis le terminal de ce dépôt, exécuter exactement :
+git add app/build.gradle app/src A-LIRE-3.6.5-V132.txt
+git commit -m "Unifie le lecteur et securise les reprises video - 3.6.5"
+git push
+4. Attendre la réussite de toutes les étapes du workflow officiel. Ce ZIP contient des sources, pas un APK déjà compilé/signé/testé sur TV.
+5. Installer l'APK produit par cette nouvelle exécution en mise à jour, sans désinstaller. Ne pas installer un ancien artefact de la tentative précédente.
+En cas d'échec, le diagnostic Gradle V130 reste disponible. Il ne faut pas considérer une compilation échouée comme un APK utilisable.
+
+AFFICHAGE
+- Le parcours alternatif réutilise le vrai activity_player.xml et les commandes PlayerView habituelles. Ce n'est plus l'ancien écran à gros boutons indépendants.
+- Même titre du film, barre supérieure, retour, lecture/pause, barre de progression, boutons -5/+15 secondes et commandes de télécommande.
+- Aucun suffixe « secours LibVLC », statut d'ouverture de moteur ou sélecteur Logiciel dans l'écran de lecture. Les avis légaux conservent naturellement les attributions de bibliothèque nécessaires, dans le menu légal.
+- Le contrôleur Media3 de cette interface ne lance pas un deuxième décodeur ; il transmet les commandes au lecteur actif.
+- La surface initiale inutilisée est retirée et son cache noir rendu transparent pour laisser apparaître la vraie sortie vidéo.
+
+PARCOURS DE LECTURE
+- Première tentative VOD : retour à DefaultRenderersFactory, avec les réglages synchrones et le secours AUDIO déjà présents. La fabrique vidéo expérimentale n'est plus appliquée d'emblée à chaque film HD/FHD.
+- Le choix de User-Agent d'une tentative HTTP est conservé pendant la reprise du même film, sans être hérité arbitrairement par le film suivant.
+- Une VOD qui jouait avant le passage en arrière-plan reprend au retour ; une pause demandée par l'utilisateur est conservée.
+- Les erreurs de décodage vidéo SD/HD/FHD peuvent aussi accéder au parcours alternatif, pas seulement les gros fichiers 4K/Dolby Vision.
+- Une horloge audio, un événement Playing ou une surface vidéo existante ne sont plus considérés comme preuve d'une image fluide.
+- Surveillance des compteurs d'images rendues : absence d'image persistante, image figée et débit d'images durablement insuffisant accompagné d'images perdues. Pause, chargement, déplacement dans le film et arrière-plan suspendent cette observation ; un flux sain n'est pas relancé arbitrairement.
+- Reprises bornées : préférence MediaCodec NDK, préférence JNI, puis sortie compatible sans rendu direct. Une tentative explicitement logicielle supplémentaire est réservée aux fichiers non classés lourds. Les préférences conservent avcodec pour l'audio ; elles ne prouvent PAS que le décodeur vidéo choisi par la bibliothèque est matériel.
+- Une piste alternative Media3 doit conserver au moins les dimensions connues du format en échec : une piste 4K connue n'est plus remplacée automatiquement par une piste FHD de la même source.
+- Pas de transcodage, de faux changement d'extension ou de promesse de conversion HDR/Dolby Vision. Les octets de la vidéo progressive sont conservés ; les manifestes HLS sont seulement relayés par le pont existant.
+- Une erreur HTTP remontée par le pont ne déclenche pas une succession de changements de codec. Les en-têtes privés de portail restent limités à l'origine autorisée.
+- Les parcours live et replay ne sont pas redirigés vers ce lecteur VOD. Le problème fournisseur de replay 403 précédemment observé n'est pas déclaré résolu par ce correctif.
+
+TESTS LOCAUX EFFECTIVEMENT EXECUTES
+- 113 méthodes de tests JVM du projet : politiques vidéo, nouvelles règles d'images et reprises, définitions alternatives, pont HTTP/HLS et régressions antérieures.
+- 11 vérifications du wrapper vidéo de production avec interfaces Android/Media3 minimales.
+- 37 vérifications Java de la recherche existante et de son stockage sur fichiers.
+- 16 vérifications du nouveau contrôleur d'interface avec interfaces minimales : titre, chronologie, durée, position réelle, pause/lecture, déplacement, vitesse, épisode suivant, absence de deuxième surface et états de chargement.
+- Les compilations Java hôtes utilisent Java 17 et des interfaces de test locales pour les dépendances absentes. Ce n'est PAS une compilation Android complète ou un test du JNI LibVLC.
+- Les XML, le contenu de l'archive et les fichiers hors périmètre sont contrôlés avant livraison. L'XML du lecteur habituel reste inchangé.
+- Les API utilisées sont rapprochées des sources Media3 1.4.1 et des sources publiques LibVLC 3.x. L'AAR natif 3.6.5 n'a pas été exécuté dans ce poste de test.
+
+LIMITES A NE PAS CONFONDRE AVEC UNE VALIDATION
+Ce poste ne dispose pas du compilateur Kotlin/SDK Android ni d'un boîtier TV équivalent avec le flux fournisseur. La compilation Android/Kotlin complète reste à confirmer par GitHub Actions ; l'image, le son, les couleurs HDR et la fluidité doivent être confirmés sur l'appareil réel.
+Les compteurs d'images du lecteur ne mesurent pas physiquement ce que la dalle affiche. Une résolution, un profil Dolby Vision, un décodeur disponible et une image réellement fluide sont des choses différentes.
+Aucune garantie universelle « tous boîtiers, toutes vidéos, zéro saccade » n'est donnée. Une limitation de décodage, de firmware, de DRM/licence ou de débit n'est pas supprimée par le seul changement de lecteur. Aucun test d'émulation matérielle équivalente n'a été effectué.
+
+PERIMETRE PRESERVE
+Recherche approuvée, API de listes et fournisseurs, historique/favoris, chaînes récemment vues, replay, backend Apps Script, panels, signatures, identité des APK et règles de mise à jour : fichiers hors correctif conservés. Le workflow de diagnostic CI reste présent, inchangé.
+Les attributions et fichiers LGPL de la bibliothèque sont conservés. Leur seule présence ne constitue pas une vérification complète des obligations de distribution du futur binaire ; les sources correspondantes et obligations de remplacement/relinking restent à respecter pour toute publication.
