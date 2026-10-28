@@ -36,7 +36,7 @@ class VlcVodActivity : AppCompatActivity() {
     private lateinit var controller:UnifiedVodController
     private var dialog:PlaybackErrorDialog?=null
     private val handler=Handler(Looper.getMainLooper())
-    private val health=VodFrameHealth()
+    private val health=VodFrameHealth(6000L,6000L,4000L)
     private var mode=0
     private var busy=false
     private var generation=0
@@ -47,6 +47,7 @@ class VlcVodActivity : AppCompatActivity() {
     private var failed=false
     private var ended=false
     private var heavy=true
+    private var declaredHeavy=false
     private var speed=1f
     private var graceUntil=0L
     private var resumeMs=0L
@@ -54,6 +55,7 @@ class VlcVodActivity : AppCompatActivity() {
     private var everOpened=false
     private var sourceUrl=""
     private var lastSave=0L
+    private var advancing=false
     @Volatile private var upstreamStatus=0
     private val mediaTitle get()=intent.getStringExtra("title").orEmpty()
     private val kind get()=intent.getStringExtra("historyKind").orEmpty()
@@ -66,12 +68,13 @@ class VlcVodActivity : AppCompatActivity() {
     }
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
-        if(!intent.getBooleanExtra("vlcFallback",false)||kind !in listOf("movie","series")||!ownerReady()){finish();return}
+        if((!intent.getBooleanExtra("vlcPrimary",false)&&!intent.getBooleanExtra("vlcFallback",false))||kind !in listOf("movie","series")||!ownerReady()){finish();return}
         sourceUrl=extra("url")
         resumeMs=savedInstanceState?.getLong("position")?:intent.getLongExtra("vlcResumeMs",0L)
-        mode=(savedInstanceState?.getInt("mode")?:0).coerceIn(0,3)
+        declaredHeavy=intent.getBooleanExtra("vlcHeavy",false)||VodPlaybackPlan.heavyTitle(mediaTitle)
+        heavy=true // Unknown geometry is not permission to force software decoding of a possible 4K file.
+        mode=(savedInstanceState?.getInt("mode")?:VodPlaybackPlan.first(declaredHeavy)).coerceIn(0,3)
         shouldPlay=savedInstanceState?.getBoolean("wantsPlay")?:true
-        heavy=intent.getBooleanExtra("vlcHeavy",true)
         if(heavy&&mode==3)mode=2
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
@@ -126,24 +129,23 @@ class VlcVodActivity : AppCompatActivity() {
             try {
                 System.loadLibrary("c++_shared");System.loadLibrary("vlc");System.loadLibrary("vlcjni")
                 val options=arrayListOf("--quiet","--no-video-title-show","--stats")
-                if(mode>=2)options.add("--android-display-chroma=RV32")
                 val library=LibVLC(this@VlcVodActivity,options);vlc=library
                 val p=MediaPlayer(library);engine=p
-                p.attachViews(video,null,true,mode==2)
+                p.attachViews(video,null,true,VodPlaybackPlan.texture(mode))
                 val uri=if(VlcStreamBridge.network(url)){val proxy=makeBridge(url);bridge=proxy;Uri.parse(proxy.localUrl())}else Uri.parse(url)
                 val media=if(uri.scheme=="content"){
                     val fd=contentResolver.openFileDescriptor(uri,"r")?:throw java.io.IOException("Local file unavailable")
                     descriptor=fd;Media(library,fd.fileDescriptor)
                 }else Media(library,uri)
                 activeMedia=media
-                // Explicit preferences, with avcodec retained for AUDIO as well as supported video.
-                // These are preferences, not proof that a given box actually used a hardware codec.
+                // Cache is set before HW selection so LibVLC does not replace it with legacy defaults.
+                media.addOption(":network-caching=1000");media.addOption(":file-caching=300")
+                if(mode==0)media.setHWDecoderEnabled(true,false)
                 for(option in VodPlaybackPlan.options(mode))media.addOption(option)
-                media.addOption(":network-caching=2000");media.addOption(":file-caching=1500")
                 if(kind=="series")media.addOption(":audio-language=fr,fra,fre")
                 if(extra("vlcSubtitleUrl").isNotBlank())media.addOption(":sub-file="+extra("vlcSubtitleUrl"))
                 p.setMedia(media)
-                graceUntil=android.os.SystemClock.elapsedRealtime()+5000
+                graceUntil=android.os.SystemClock.elapsedRealtime()+1500
                 p.setEventListener {event->runOnUiThread {
                     if(engine!==p||token!=generation)return@runOnUiThread
                     when(event.type){
@@ -190,7 +192,7 @@ class VlcVodActivity : AppCompatActivity() {
             if(now-lastSave>5000){saveProgress();lastSave=now}
             val stats=activeMedia?.getStats()
             val track=p.getCurrentVideoTrack()
-            if(track!=null)heavy=heavy||VodVideoPolicy.heavy(null,track.width,track.height)
+            if(track!=null&&track.width>0&&track.height>0)heavy=declaredHeavy||VodVideoPolicy.heavy(null,track.width,track.height)
             val fps=if(track!=null&&track.frameRateDen>0)track.frameRateNum.toFloat()/track.frameRateDen else 0f
             val nearEnd=length>0&&length-time<2000
             val action=health.sample(now,foreground&&shouldPlay&&!ended&&!nearEnd,buffering,now<graceUntil,
@@ -209,14 +211,14 @@ class VlcVodActivity : AppCompatActivity() {
         mode=next;openAttempt(true)
     }
     private fun setPlaying(value:Boolean){
-        shouldPlay=value;health.reset();graceUntil=android.os.SystemClock.elapsedRealtime()+5000
+        shouldPlay=value;health.reset();graceUntil=android.os.SystemClock.elapsedRealtime()+1500
         val p=engine
         if(p!=null){if(value&&foreground)p.play()else p.pause()}
         else if(value&&!busy&&!failed)openAttempt(everOpened)
     }
     private fun seekTo(position:Long){
         val p=engine?:return;val length=p.getLength();if(length<=0||!p.isSeekable)return
-        p.setTime(position.coerceIn(0L,length-1));health.reset();graceUntil=android.os.SystemClock.elapsedRealtime()+8000
+        p.setTime(position.coerceIn(0L,length-1));health.reset();graceUntil=android.os.SystemClock.elapsedRealtime()+2000
     }
     private fun settings(){
         val d=PlaybackErrorDialog(this);d.setTitle("Paramètres de lecture")
@@ -241,7 +243,35 @@ class VlcVodActivity : AppCompatActivity() {
             if(engine===p&&!isFinishing&&!isDestroyed)try{if(subtitles)p.setSpuTrack(track.id)else p.setAudioTrack(track.id)}catch(_:IllegalStateException){}
             d.dismiss()
         };box.addView(b)}
+        if(subtitles){
+            val search=Button(this);search.text="Chercher en ligne…";search.setOnClickListener {d.dismiss();searchSubtitlesOnline()};box.addView(search)
+        }
         val scroll=ScrollView(this);scroll.addView(box);d.setView(scroll);d.setButton(android.content.DialogInterface.BUTTON_NEGATIVE,"Fermer"){_,_->};dialog?.dismiss();dialog=d;d.show()
+    }
+    private fun searchSubtitlesOnline(){
+        val query=extra("seriesName").ifBlank {mediaTitle};if(query.isBlank())return
+        val token=generation
+        Toast.makeText(this,"Recherche de sous-titres…",Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val results=SubtitlesApi.search(query,SubtitlesConfig.SUBLANGUAGE_IDS)
+            if(token!=generation||isFinishing||isDestroyed)return@launch
+            if(results.isEmpty()){Toast.makeText(this@VlcVodActivity,"Aucun sous-titre trouvé.",Toast.LENGTH_LONG).show();return@launch}
+            val d=PlaybackErrorDialog(this@VlcVodActivity);d.setTitle("Choisir un sous-titre")
+            val box=LinearLayout(this@VlcVodActivity);box.orientation=LinearLayout.VERTICAL
+            for(opt in results){val b=Button(this@VlcVodActivity);b.text="${opt.lang} — ${opt.release.take(45)}";b.setOnClickListener {
+                d.dismiss()
+                lifecycleScope.launch {
+                    val local=SubtitlesApi.downloadToFile(this@VlcVodActivity,opt)
+                    if(token!=generation||isFinishing||isDestroyed)return@launch
+                    val p=engine
+                    val applied=if(local.isNullOrBlank()||p==null)false else try{p.addSlave(org.videolan.libvlc.interfaces.IMedia.Slave.Type.Subtitle,Uri.parse(local),true)}catch(_:Exception){false}
+                    if(applied)intent.putExtra("vlcSubtitleUrl",local)
+                    Toast.makeText(this@VlcVodActivity,if(applied)"Sous-titres activés" else "Sous-titres indisponibles",Toast.LENGTH_SHORT).show()
+                }
+            };box.addView(b)}
+            val scroll=ScrollView(this@VlcVodActivity);scroll.addView(box);d.setView(scroll)
+            d.setButton(android.content.DialogInterface.BUTTON_NEGATIVE,"Fermer"){_,_->};dialog?.dismiss();dialog=d;d.show()
+        }
     }
     private fun licence(){
         val text=assets.open("libvlc-NOTICE.txt").bufferedReader().use {it.readText()}+"\n\n"+assets.open("libvlc-LGPL-2.1.txt").bufferedReader().use {it.readText()}
@@ -254,12 +284,13 @@ class VlcVodActivity : AppCompatActivity() {
         WatchHistory.save(this,sourceUrl,mediaTitle,extra("logo"),kind,position,length,extra("seriesName"),extra("seriesLogo"),extra("seriesId"),extra("seriesCmd"),extra("historySourceCmd"),extra("historySourceStreamId"),extra("historySourceContainerExt"))
     }
     private fun nextEpisode(){
-        if(kind!="series")return
+        if(kind!="series"||advancing)return
         val index=Session.episodeIndex+1;val next=Session.episodeQueue.getOrNull(index)?:return
+        advancing=true
         lifecycleScope.launch {
             val pl=Session.current
             val url=next.directUrl?.takeIf {it.isNotBlank()}?:if(pl!=null&&!next.cmd.isNullOrBlank())try{Api.stalkerLink(pl,next.cmd!!,"movie")}catch(_:Exception){null}else null
-            if(url.isNullOrBlank()||isFinishing||isDestroyed)return@launch
+            if(url.isNullOrBlank()||isFinishing||isDestroyed){advancing=false;return@launch}
             Session.episodeIndex=index
             val target=Intent(this@VlcVodActivity,PlayerActivity::class.java);intent.extras?.let {target.putExtras(it)}
             target.extras?.keySet()?.toList()?.filter {it.startsWith("vlc")||it.startsWith("vodRecovery")||it=="vodRejectedDecoders"||it=="vodCompatibleBase"||it=="vodUaIndex"}?.forEach {target.removeExtra(it)}
@@ -284,6 +315,7 @@ class VlcVodActivity : AppCompatActivity() {
         try{vlc?.release()}catch(_:Exception){};vlc=null
     }
     override fun onKeyDown(code:Int,event:KeyEvent):Boolean {
+        if(!::playerView.isInitialized)return super.onKeyDown(code,event)
         when(code){
             KeyEvent.KEYCODE_BACK->{if(playerView.isControllerFullyVisible)playerView.hideController()else finish();return true}
             KeyEvent.KEYCODE_DPAD_CENTER->{if(!playerView.isControllerFullyVisible){setPlaying(!shouldPlay);controller.refresh();playerView.showController();return true}}

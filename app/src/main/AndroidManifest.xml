@@ -202,7 +202,7 @@
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false" />
 
-        <activity android:name=".VlcVodActivity" android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="sensorLandscape" android:exported="false" />
+        <activity android:name=".VlcVodActivity" android:theme="@style/Theme.KZ.Fullscreen" android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="sensorLandscape" android:exported="false" />
 
         <activity
             android:name=".PlayerActivity"

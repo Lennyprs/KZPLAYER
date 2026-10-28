@@ -1,0 +1,47 @@
+KZ PLAYER 3.6.6 — V133 — VLC DIRECT POUR FILMS/SERIES, EXOPLAYER POUR CHAINES
+
+CETTE NOTICE REMPLACE LES CONSIGNES DE LECTURE VOD DES LIVRAISONS PRECEDENTES.
+
+CHANGEMENTS LIVRES
+- Films et séries : ouverture de VLC directement, avant toute création du lecteur ExoPlayer/Media3. Plus de succession Media3 -> échecs vidéo -> seconde activité VLC pour démarrer une VOD normale.
+- Chaînes : lecteur ExoPlayer/Media3 conservé. Le replay et les bandes-annonces restent dans leur parcours distinct ; aucune redirection de replay vers VLC n'a été ajoutée.
+- Même interface habituelle pour la lecture : titre, retour, commandes et progression. Aucun nom de moteur affiché dans l'écran de lecture. Les avis légaux restent consultables.
+- HD/FHD : chemin natif normal avec sélection d'accélération matérielle tenant compte de l'appareil, au lieu d'une liste de codecs imposée au premier essai. Une accélération demandée ne prouve pas qu'un décodeur matériel a effectivement été retenu.
+- 4K/Dolby Vision identifiés par le titre ou les informations transmises : première sortie TextureView avec préférence JNI, plutôt que repasser par la sortie opaque NDK/SurfaceView de départ qui ne donnait pas d'image exploitable dans les signalements. Une reprise sans rendu direct reste disponible. Cela change le chemin de sortie ; ce n'est PAS une preuve de résolution du problème matériel.
+- La conversion globale RV32 imposée dans certaines reprises est supprimée. La bibliothèque choisit le format de sortie au lieu de forcer une conversion RGB 8 bits.
+- Cache demandé : réseau 1000 ms, fichier local 300 ms. Suppression des attentes de démarrage Media3 pour les VOD redirigées. Ces valeurs ne garantissent pas un démarrage réel en une seconde : serveur, manifeste, ouverture du conteneur, déplacement initial et décodeur prennent aussi du temps.
+- Observation native : absence d'image ou image figée persistante sur 6 secondes observables ; débit d'images très insuffisant avec pertes sur deux fenêtres de 4 secondes. Grâce initiale 1,5 seconde et grâce de déplacement 2 secondes. Le chargement, la pause et l'arrière-plan ne sont pas interprétés arbitrairement comme une panne de décodeur. Ces délais ne sont pas une borne universelle du temps réseau total.
+- Tentatives bornées. Pas de tentative explicitement logicielle supplémentaire pour une définition lourde ou encore inconnue ; les décodeurs automatiques restent susceptibles de choisir du logiciel. Une définition réellement connue comme légère peut encore accéder au chemin logiciel.
+- Aucun réencodage, aucune suppression magique du Dolby Vision, aucune baisse volontaire de résolution. Aucun serveur de transcodage ajouté.
+- Position de reprise conservée par titre, catégorie et propriétaire de liste. Un film terminé n'est pas repris dans ses dix dernières secondes.
+- Sous-titres intégrés et recherche en ligne conservés dans le menu VLC ; ajout d'un sous-titre externe sans recharger le film. Les demandes d'épisode suivant sont protégées contre une double ouverture simultanée.
+- Thème plein écran aligné avec le lecteur principal. Licences de l'application et attributions de bibliothèque conservées.
+
+CE QUI A ETE VERIFIE LOCALEMENT
+136 méthodes de tests JVM du projet passent, dont 23 nouveaux tests de routage, classification de qualité, chemins bornés et observation rapide.
+11 vérifications du wrapper vidéo avec interfaces minimales passent.
+37 vérifications Java de la recherche et de son stockage sur fichiers passent.
+16 vérifications du contrôleur d'interface avec interfaces minimales passent.
+Les fichiers XML, la conservation des fichiers hors correctif et le CRC du ZIP sont contrôlés avant livraison.
+Ces tests exécutent des règles et du code Java de production avec des interfaces locales pour les dépendances absentes. Ils ne décodent pas le film 4K sur le matériel de l'utilisateur.
+
+CE QUI N'EST PAS VALIDE
+Ce poste ne dispose pas du SDK Android/compilateur Kotlin et du boîtier réel avec la source fournisseur. La compilation complète Android/Kotlin est à confirmer par GitHub Actions.
+Aucune validation native de fluidité, d'image 4K, de profil Dolby Vision, de HDR, de couleurs ou de démarrage instantané n'a été effectuée ici. La vidéo reçue montre le problème, mais ne révèle pas le décodeur réellement utilisé ou le profil de la source.
+Une sortie TextureView ou un compteur d'images qui progresse n'est pas une mesure physique de l'image de la dalle. Un profil Dolby Vision dépourvu de couche compatible et une capacité de décodage insuffisante ne sont pas corrigés par une option universelle. Le transport réseau reste soumis au fournisseur.
+Ne pas présenter cette livraison comme une garantie « tous appareils, toutes vidéos, zéro bug, zéro saccade », ni comme une résolution matériellement prouvée de la 4K/Dolby Vision.
+Le replay fournisseur précédemment refusé en HTTP 403 n'est pas déclaré réparé.
+
+INSTALLATION
+1. Extraire le contenu du ZIP à la racine du dépôt local KZPLAYER, là où se trouvent app/ et .github/. Remplacer les fichiers existants. Ne pas copier le ZIP dans app/ et ne pas créer de dossier intermédiaire.
+2. Exécuter depuis ce dépôt ces trois lignes :
+git add app/build.gradle app/src A-LIRE-3.6.6-V133.txt
+git commit -m "Utilise VLC directement pour films et series - 3.6.6"
+git push
+3. Attendre la réussite complète du workflow officiel avant d'utiliser son APK. Ce ZIP contient les sources, pas un APK déjà compilé/signé.
+4. Installer l'APK de cette nouvelle exécution en mise à jour, sans désinstaller l'application et sans effacer les données.
+Le diagnostic Gradle V130 reste présent. Une compilation échouée ne produit pas un APK validé.
+
+PERIMETRE
+Recherche, listes/fournisseurs, historique/favoris, chaînes récemment vues, replay, backend Apps Script, panels, signatures, identités des APK et sécurité de mise à jour : pas de modification de leurs fichiers. Le lecteur principal contient uniquement la nouvelle décision d'entrée VOD avant la création du lecteur.
+Les exigences LGPL de distribution restent applicables au futur binaire. Les avis légaux conservés ne constituent pas à eux seuls une preuve de conformité complète des sources correspondantes et des obligations de remplacement/relinking.

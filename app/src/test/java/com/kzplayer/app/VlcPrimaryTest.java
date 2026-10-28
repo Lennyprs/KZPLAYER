@@ -1,0 +1,27 @@
+package com.kzplayer.app;
+import org.junit.Test;import static org.junit.Assert.*;
+public class VlcPrimaryTest {
+ @Test public void movieStartsInVlc(){assertTrue(VodPlaybackPlan.useVlc(false,"movie","vod"));}
+ @Test public void seriesStartsInVlc(){assertTrue(VodPlaybackPlan.useVlc(false,"series","vod"));}
+ @Test public void movieDoesNotNeedACodecFailureFirst(){assertTrue(VodPlaybackPlan.useVlc(false,"movie","live"));}
+ @Test public void missingHistoryKindMayUseExplicitVodMode(){assertTrue(VodPlaybackPlan.useVlc(false,null,"vod"));}
+ @Test public void channelRemainsInExo(){assertFalse(VodPlaybackPlan.useVlc(false,"live","live"));}
+ @Test public void channelNeverRoutesBecauseOfAFileExtension(){assertFalse(VodPlaybackPlan.useVlc(false,"live","vod"));}
+ @Test public void replayRemainsInExo(){assertFalse(VodPlaybackPlan.useVlc(true,"movie","vod"));assertFalse(VodPlaybackPlan.useVlc(true,"live","live"));}
+ @Test public void trailersRemainSeparate(){assertFalse(VodPlaybackPlan.useVlc(false,"trailer","vod"));}
+ @Test public void unknownLiveEntryRemainsInExo(){assertFalse(VodPlaybackPlan.useVlc(false,null,"live"));}
+ @Test public void normalFullHdKeepsTheNormalSurface(){assertEquals(0,VodPlaybackPlan.first(false));assertFalse(VodPlaybackPlan.texture(0));}
+ @Test public void knownHeavyFileAvoidsThePreviouslyFailingInitialOutput(){assertEquals(1,VodPlaybackPlan.first(true));assertTrue(VodPlaybackPlan.texture(1));}
+ @Test public void normalPathDoesNotForceACodecList(){assertEquals(0,VodPlaybackPlan.options(0).length);}
+ @Test public void noForcedRgb32Conversion(){for(int mode=0;mode<4;mode++)for(String option:VodPlaybackPlan.options(mode))assertFalse(option.contains("RV32"));}
+ @Test public void heavyTitleRecognition(){for(String s:new String[]{"Film [4K]","Film UHD","Film 2160p","Film [DOLBY VISION]","Film [DV]","Film HDR10"})assertTrue(VodPlaybackPlan.heavyTitle(s));}
+ @Test public void normalTitlesAreNotHeavyJustBecauseOfLetters(){for(String s:new String[]{"Advice","Adventure 2026 FHD","DVD edition","Full HD","HD"})assertFalse(VodPlaybackPlan.heavyTitle(s));}
+ @Test public void heavyOutputAttemptsAreBounded(){int mode=VodPlaybackPlan.first(true),attempts=0;while(mode>=0){assertTrue(++attempts<=2);assertTrue(mode!=3);mode=VodPlaybackPlan.next(mode,true);}assertEquals(2,attempts);}
+ @Test public void copyBackStillRetainsHardwareDecoderChoices(){String all=String.join(" ",VodPlaybackPlan.options(2));assertTrue(all.contains("mediacodec_jni"));assertTrue(all.contains("no-mediacodec-dr"));}
+ @Test public void shortNoImageObservation(){VodFrameHealth h=new VodFrameHealth(6000,6000);for(int s=0;s<6;s++)assertEquals(VodFrameHealth.OK,h.sample(s*1000,true,false,false,0,0,s*1000,24));assertEquals(VodFrameHealth.NO_IMAGE,h.sample(6000,true,false,false,0,0,6000,24));}
+ @Test public void bufferingDoesNotTriggerShortDecoderTimeout(){VodFrameHealth h=new VodFrameHealth(6000,6000);for(int s=0;s<60;s++)assertEquals(VodFrameHealth.OK,h.sample(s*1000,true,true,false,0,0,s*1000,24));}
+ @Test public void pauseDoesNotTriggerShortDecoderTimeout(){VodFrameHealth h=new VodFrameHealth(6000,6000);for(int s=0;s<60;s++)assertEquals(VodFrameHealth.OK,h.sample(s*1000,false,false,false,0,0,s*1000,24));}
+ @Test public void shortIntervalStillLeavesHealthyFramesAlone(){VodFrameHealth h=new VodFrameHealth(6000,6000);for(int s=0;s<60;s++)assertEquals(VodFrameHealth.OK,h.sample(s*1000,true,false,false,s*24,0,s*1000,24));}
+ @Test(expected=IllegalArgumentException.class) public void zeroTimeoutCannotCauseRetryStorm(){new VodFrameHealth(0,0);}
+ @Test public void verySlowOutputDoesNotWaitForTwoEightSecondWindows(){VodFrameHealth h=new VodFrameHealth(6000,6000,4000);for(int s=0;s<8;s++)assertEquals(VodFrameHealth.OK,h.sample(s*1000,true,false,false,s+1,s*50,s*1000,24));assertEquals(VodFrameHealth.TOO_SLOW,h.sample(8000,true,false,false,9,400,8000,24));}
+}

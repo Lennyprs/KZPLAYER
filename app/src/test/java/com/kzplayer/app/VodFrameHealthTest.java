@@ -22,7 +22,7 @@ public class VodFrameHealthTest {
  @Test public void heavyFilesNeverForceTheSoftwareOnlyPath(){assertEquals(1,VodPlaybackPlan.next(0,true));assertEquals(2,VodPlaybackPlan.next(1,true));assertEquals(-1,VodPlaybackPlan.next(2,true));}
  @Test public void fullHdMayUseOneSoftwareOnlyPath(){assertEquals(3,VodPlaybackPlan.next(2,false));assertEquals(-1,VodPlaybackPlan.next(3,false));}
  @Test public void noRetryCycle(){for(boolean heavy:new boolean[]{false,true}){int n=0;for(int mode=0;mode>=0;mode=VodPlaybackPlan.next(mode,heavy))assertTrue(++n<=4);}}
- @Test public void audioDecoderRemainsAvailableInEveryPath(){for(int mode=0;mode<4;mode++)assertTrue(Arrays.stream(VodPlaybackPlan.options(mode)).anyMatch(s->s.startsWith(":codec=")&&s.contains("avcodec")));}
+ @Test public void audioDecoderRemainsAvailableInEveryPath(){for(int mode=1;mode<4;mode++)assertTrue(Arrays.stream(VodPlaybackPlan.options(mode)).anyMatch(s->s.startsWith(":codec=")&&(s.contains("avcodec")||s.endsWith(",all"))));}
  @Test public void compatibilityPathChangesRenderingNotTheUrl(){assertTrue(Arrays.asList(VodPlaybackPlan.options(2)).contains(":no-mediacodec-dr"));}
  @Test public void noNetworkOrContainerRewritingInCodecOptions(){for(int mode=0;mode<4;mode++)for(String s:VodPlaybackPlan.options(mode)){assertFalse(s.contains("http"));assertFalse(s.contains("transcode"));assertFalse(s.contains("scale"));}}
  @Test public void sdHdFullHdAnd4kFailuresAreAllEligible(){for(int width:new int[]{720,1280,1920,3840})assertTrue(VodVideoPolicy.alternateEngine(false,false,false,false,true,"ERROR_CODE_DECODING_FAILED","video/avc",width,width/2,false));}

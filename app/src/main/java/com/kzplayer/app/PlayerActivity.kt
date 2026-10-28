@@ -453,6 +453,21 @@ class PlayerActivity : AppCompatActivity() {
             finish(); return
         }
 
+        // Films/episodes enter VLC directly; no ExoPlayer, decoder probe or startup timeout first.
+        if(VodPlaybackPlan.useVlc(isReplayMode,intent.getStringExtra("historyKind"),mode)){
+            val owner=Session.current
+            val vodKind=if(watchKind=="series")"series" else "movie"
+            val previous=WatchHistory.all(this).firstOrNull {it.title==title&&it.kind==vodKind&&it.playlistId==owner?.id.orEmpty()}
+            val position=previous?.let {if(it.durationMs>0&&it.durationMs-it.positionMs<10000L)0L else it.positionMs.coerceAtLeast(0L)}?:0L
+            val next=android.content.Intent(this,VlcVodActivity::class.java)
+            intent.extras?.let {next.putExtras(it)}
+            next.putExtra("vlcPrimary",true).putExtra("historyKind",vodKind)
+                .putExtra("vlcOwnerPlaylistId",owner?.id.orEmpty()).putExtra("vlcResumeMs",position)
+                .putExtra("vlcHeavy",VodPlaybackPlan.heavyTitle(title))
+            try{startActivity(next);finish()}catch(_:Exception){showPlaybackError("Lecture indisponible","La lecture n'a pas pu être ouverte.")}
+            return
+        }
+
         // v149 : httpFactory delegue a KzHttpDataSource qui applique le DNS choisi.
         // Mode DnsPref.SYSTEM (defaut) -> DefaultHttpDataSource inchange (aucun risque de regression).
         // Mode DoH -> OkHttpDataSource + resolveur DNS-over-HTTPS.
