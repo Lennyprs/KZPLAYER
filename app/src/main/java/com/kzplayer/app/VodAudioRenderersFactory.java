@@ -14,7 +14,7 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import java.util.ArrayList;
 /** VOD only: decode audio locally and output PCM, not encoded HDMI passthrough. */
-public final class VodAudioRenderersFactory extends DefaultRenderersFactory {
+public class VodAudioRenderersFactory extends DefaultRenderersFactory {
  public VodAudioRenderersFactory(Context context){super(context);}
  @Override protected void buildAudioRenderers(Context context,int mode,MediaCodecSelector selector,
    boolean fallback,AudioSink sink,Handler handler,AudioRendererEventListener listener,ArrayList<Renderer> out){

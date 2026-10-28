@@ -1,0 +1,108 @@
+KZ PLAYER — 3.7.3 / V139 — CONFIGURATION HEVC DES PISTES DOLBY COMPATIBLES
+=====================================================================
+Sources complètes basées sur 3.7.2 V138, avec les tests V137 conservés.
+Cette version implémente l'adaptation vidéo annoncée ; elle n'est pas une
+preuve de résolution du problème de lecture sur le X96Q.
+
+POINT DE DÉPART
+---------------
+L'utilisateur confirme que le même contenu se lit dans le lecteur interne
+TiviMate 5.3.3, avec la même liste et le même boîtier X96Q. Cela établit un cas
+de lecture locale fonctionnelle, sans révéler la configuration de TiviMate.
+La dernière erreur KZ indique : MKV reconnu, piste video/dolby-vision,
+hev1.08.06, 3636 x 2160, erreur de décodage OMX.allwinner.video.decoder.hevc.
+Le code interne de TiviMate n'a pas été consulté ni copié.
+
+ADAPTATION RÉELLE
+----------------
+Media3 1.4.1 peut écrire un paramètre de profil Dolby dans le MediaFormat
+lorsque la piste est annoncée Dolby, même si le codec sélectionné est HEVC.
+Cette version évite ce paramètre dans un cas strictement délimité :
+- lecture VOD/films/séries uniquement ;
+- piste source annoncée video/dolby-vision ;
+- décodeur réellement sélectionné de type video/hevc ;
+- Media3 reconnaît lui-même video/hevc comme MIME alternatif de cette piste ;
+- pas de DRM déclaré et pas de tunneling audio/vidéo actif.
+
+Pour ce cas, seule la copie de Format utilisée pour fabriquer le MediaFormat
+est présentée comme HEVC, sans chaîne de profil Dolby. La création standard
+du MediaFormat n'impose alors aucun profil Dolby au décodeur HEVC : celui-ci
+lit ses paramètres HEVC dans le bitstream et ses données d'initialisation.
+Aucun profil Main/Main10 n'est inventé ou forcé.
+
+La piste d'origine dans Media3 reste annoncée Dolby Vision. Dimensions, cadence,
+CSD/SPS/PPS, données vidéo et ColorInfo sont conservées. Ni réécriture de fichier,
+ni suppression de métadonnées RPU, ni transcodage, ni conversion HDR vers SDR.
+La restitution finale des couleurs/HDR dépend toujours du décodeur et de l'écran.
+La sortie Dolby Vision native n'est pas garantie lorsqu'une base HEVC est utilisée.
+
+Aucun changement pour un décodeur Dolby natif, une piste HEVC/AVC classique,
+les bases non reconnues par Media3, les autres MIME alternatifs, DRM ou tunneling.
+Pas de classement expérimental des décodeurs, pas de nouveau moteur, pas de
+sonde de lecture préalable ou de carrousel de tentatives. La sélection native
+Media3 et les reprises bornées existantes restent présentes.
+
+DIAGNOSTIC
+----------
+Si une erreur survient encore, la fenêtre affiche désormais Configuration vidéo :
+- Base HEVC reconnue par Media3 ; profil Dolby non impose au decodeur HEVC
+  lorsque cette branche a effectivement construit la configuration ;
+- Configuration Media3 standard sinon.
+Ce libellé n'est pas une preuve d'image stable ou de bonne restitution HDR.
+Aucun identifiant IPTV, URL, MAC, jeton ou information privée de photo ajouté.
+
+AUDIO ET AUTRES FONCTIONS CONSERVÉS
+---------------------------------
+Le correctif V138 est hérité : priorité FFmpeg audio lorsqu'il est disponible
+et compatible, sortie PCM, multicanal standard de 3 à 8 canaux vers stéréo avec
+centre/dialogues conservés, mono/stéréo préservés. Aucun changement des méthodes
+de construction audio par rapport à V138.
+Le changement est réservé aux films et séries ; direct et replay conservent
+la fabrique Media3 standard. Recherche approuvée, catégories/cache V134,
+licences, API fournisseurs, favoris, historique, sous-titres, panneaux/backend,
+signature, identités d'applications et workflows préservés.
+
+INSTALLATION
+------------
+1. Extraire le ZIP COMPLET dans le dépôt local KZPLAYER, à la racine contenant
+   app, tools, .github et build.gradle. Accepter les remplacements.
+2. Depuis cette racine, lancer le nettoyage des vieux fichiers VLC :
+
+   python3 tools/release/remove_libvlc_v135.py
+
+   Il est actualisé pour 3.7.3 et relançable. L'extraction du ZIP seule ne peut
+   pas supprimer les anciens fichiers présents depuis 3.6.7. Le nouveau helper
+   VodCompatibilityRenderersFactory n'est pas supprimé par ce nettoyage.
+3. Puis exactement ces trois commandes Git :
+
+   git add -A app tools/release/remove_libvlc_v135.py A-LIRE-3.7.3-V139.txt
+   git commit -m "Adapte la configuration Dolby vers HEVC compatible - 3.7.3"
+   git push
+
+4. Attendre la réussite COMPLÈTE du workflow Android officiel de GitHub.
+5. Installer le nouvel APK officiel en mise à jour, sans désinstaller et sans
+   effacer les données. Signature et calcul CI du versionCode inchangés.
+   Les APK personnalisés gardent leurs identités séparées.
+Aucun déploiement Apps Script ou Cloudflare nécessaire. Utiliser ce guide,
+les guides des versions antérieures inclus dans les sources sont historiques.
+
+VÉRIFICATIONS ET LIMITES
+-----------------------
+- 140 méthodes JVM locales, dont 14 nouvelles sur les garde-fous de la base HEVC.
+- 37 contrôles de recherche Java.
+- 17 vérifications de la fabrique audio V138 héritée.
+- 23 vérifications de la nouvelle fabrique vidéo exécutée sur des interfaces
+  Android/Media3 locales minimales : absence du profil Dolby sur la configuration
+  de base reconnue, présence sur le décodeur Dolby natif, CSD/couleur/dimensions
+  conservés, DRM/tunneling inchangés, aucun second renderer ajouté, extensions
+  conservées et sortie audio PCM héritée.
+- 137 XML analysés et portée des modifications vérifiée.
+Ces contrôles ne sont PAS une compilation Android/Kotlin complète ni des tests
+sur les binaires MediaCodec/FFmpeg du boîtier. Les signatures utilisées ont été
+comparées au code Media3 1.4.1, mais les tests locaux restent des fixtures.
+
+Non validés ici : workflow GitHub, APK signé, chargement JNI, son réel, première
+image/mouvement, couleurs HDR, fluidité et lecture de la source sur X96Q.
+Aucun push ni installation réalisé ici. Aucune garantie de lecture parfaite
+universelle ou instantanée. La piste du profil est étayée par le code, pas
+confirmée comme cause unique de l'échec utilisateur.

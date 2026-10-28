@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private var activeVideoDecoderName=""
+    @Volatile private var videoConfigurationLabel="Configuration Media3 standard"
     private val vodSourceHints=VodSourceHints.State()
     private var vodContainerRetried=false
     private var vodContainerMime=""
@@ -450,7 +451,7 @@ class PlayerActivity : AppCompatActivity() {
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
         // Android choisit le decodeur adapte au firmware, avec repli natif si
         // l initialisation echoue. FFmpeg reste uniquement un secours audio.
-        val renderersFactory = (if(isVod&&!isReplayMode) VodAudioRenderersFactory(this)
+        val renderersFactory = (if(isVod&&!isReplayMode) VodCompatibilityRenderersFactory(this){label->videoConfigurationLabel=label}
             else androidx.media3.exoplayer.DefaultRenderersFactory(this))
             .setEnableDecoderFallback(true)
             // v413 : evite le gel MediaCodec "premiere frame + son uniquement"
@@ -713,7 +714,7 @@ class PlayerActivity : AppCompatActivity() {
                     val renderer=failedRendererTrackType(error)
                     val track=when(renderer){androidx.media3.common.C.TRACK_TYPE_VIDEO->"video";androidx.media3.common.C.TRACK_TYPE_AUDIO->"audio";else->"inconnue"}
                     val sourceInfo=if(!isLiveMode&&!isReplayMode)"Contenu reçu : ${vodSourceHints.kind.label}\n" else ""
-                    val diag=sourceInfo+"Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\nMedia3 utilise les décodeurs réellement disponibles sur cet appareil. La préférence HD/FHD choisit uniquement une piste fournie par la source. Aucun transcodage ni émulateur vidéo n'est intégré."
+                    val diag=sourceInfo+"Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nConfiguration vidéo : $videoConfigurationLabel\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\nMedia3 utilise les décodeurs réellement disponibles sur cet appareil. La préférence HD/FHD choisit uniquement une piste fournie par la source. Aucun transcodage ni émulateur vidéo n'est intégré."
 
                     showPlaybackError("Lecture impossible : $detail",diag)
                 }
