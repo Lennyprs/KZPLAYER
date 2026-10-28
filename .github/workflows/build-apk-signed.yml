@@ -78,7 +78,18 @@ jobs:
           # Le fichier app/build.gradle lit cette variable et l applique tel quel
           # (sans re-additionner) pour matcher le tag de release ci-dessous.
           VERSION_CODE: ${{ env.VERSION_CODE }}
-        run: ./gradlew clean :app:testReleaseUnitTest :app:assembleRelease --no-daemon --stacktrace
+        shell: bash
+        timeout-minutes: 25
+        run: bash tools/release/build_with_progress.sh
+
+      - name: Conserver le diagnostic Gradle (meme en echec)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-diagnostic-${{ github.run_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kz-gradle-diagnostics/
+          if-no-files-found: warn
+          retention-days: 7
 
       # v420 : conserver la correspondance R8 du build exact pour diagnostiquer
       # les rapports obfusques. Pas de changement de protection ou de signature.

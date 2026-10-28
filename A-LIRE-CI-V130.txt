@@ -1,0 +1,45 @@
+KZ PLAYER — CI V130 — DIAGNOSTIC DE L'ATTENTE GRADLE
+==================================================
+PATCH pour le depot 3.6.3 V129. Version Android INCHANGEE : 3.6.3.
+Il ne contient que le workflow, un script CI et ce guide.
+
+Le journal fourni s'arrete apres le demarrage du daemon. Aucune erreur
+Kotlin/Java n'est visible, et il ne prouve pas que LibVLC se telecharge.
+Ce patch REND L'ATTENTE OBSERVABLE ; il ne pretend pas en corriger la cause
+encore inconnue et n'est pas une validation de compilation ou de lecture.
+
+CHANGEMENTS
+- Memes taches clean, testReleaseUnitTest et assembleRelease.
+- --info --console=plain : affichage detaille de configuration/dependances.
+- Message de suivi chaque minute, avec anciennete de la derniere sortie.
+  Ce message confirme la surveillance, PAS l'avancement de Gradle.
+- Apres 3 minutes sans nouvelle sortie : capture des piles des processus
+  Java Gradle si les outils sont disponibles. Pas de variables/secrets dumps.
+- Limite de compilation 20 minutes + arret force apres 30 secondes de grace,
+  et limite de securite de l'etape 25 minutes.
+- Journal et captures conserves 7 jours dans un artefact de diagnostic,
+  y compris si le build echoue. Les informations --debug sont exclues.
+- Statut d'echec Gradle conserve : pas de signature/publication si echec
+  ou timeout. Signature, mapping R8, versionCode et publication inchanges.
+
+INSTALLATION
+1. Annuler l'execution actuelle via Cancel workflow, puis attendre son
+   statut Cancelled. Cela evite deux builds concurrents et deux publications.
+2. Extraire le PATCH a la racine du depot, y compris le dossier cache .github.
+   Ne pas remplacer le depot par ce ZIP : ce n'est pas un projet complet.
+3. Executer ces trois lignes :
+
+git add .github/workflows/build-apk-signed.yml tools/release/build_with_progress.sh A-LIRE-CI-V130.txt
+git commit -m "Rend visibles les attentes Gradle et borne la compilation"
+git push
+
+4. Ouvrir la NOUVELLE execution sur ce commit. Relancer l'ancien job seul
+   ne recupererait pas le workflow modifie.
+5. Les nouvelles lignes doivent identifier la phase en attente. Si le build
+   echoue ou expire, lire la derniere operation reelle et l'artefact
+   gradle-diagnostic associe a cette execution.
+
+VALIDATIONS LOCALES
+Syntaxe Bash et YAML, preservation des etapes sensibles et des sources APK.
+Fixtures executables : succes -> code 0, echec -> code 19, timeout -> code 124.
+Ce ne sont PAS des compilations Android. Aucune execution GitHub lancee ici.
