@@ -26,66 +26,33 @@ import kotlinx.coroutines.launch
 
 class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
-    private var activeVideoDecoderName=""
     private var playbackOwnerId=""
-
+    private var activeVideoDecoderName=""
     private var playbackErrorDialog:PlaybackErrorDialog?=null
-    private fun closePlaybackError(){
-        val dialog=playbackErrorDialog
-        playbackErrorDialog=null
-        dialog?.dismiss()
-    }
+    private fun closePlaybackError(){val d=playbackErrorDialog;playbackErrorDialog=null;d?.dismiss()}
     private fun showPlaybackError(title:String,message:String){
-        recoveryHandler.removeCallbacks(startupWatchdog)
         if(isFinishing||isDestroyed||!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))return
         closePlaybackError()
-        val dialog=PlaybackErrorDialog(this)
-        dialog.setTitle(title)
-        dialog.setMessage(message)
-        dialog.setButton(android.content.DialogInterface.BUTTON_POSITIVE,"OK"){_,_->}
-        dialog.setOnDismissListener {if(playbackErrorDialog===dialog)playbackErrorDialog=null}
-        playbackErrorDialog=dialog
-        dialog.show()
+        val d=PlaybackErrorDialog(this)
+        d.setTitle(title);d.setMessage(message)
+        d.setButton(android.content.DialogInterface.BUTTON_POSITIVE,"OK"){_,_->}
+        d.setOnDismissListener {if(playbackErrorDialog===d)playbackErrorDialog=null}
+        playbackErrorDialog=d;d.show()
     }
 
     private lateinit var playerView: PlayerView
     private var candidates: List<String> = emptyList()
     private var isReplayMode = false
-    private var resumeVodAfterStop=false
-    private var replayQuotaShown = false
-    private fun showReplayRateLimit() {
-        recoveryHandler.removeCallbacks(replayStartupWatchdog)
-        recoveryHandler.removeCallbacks(startupWatchdog)
-        player?.stop()
-        if (replayQuotaShown || isFinishing || isDestroyed) return
-        replayQuotaShown = true
-        val seconds = ((ReplayRateLimit.remainingMs(watchUrl) + 999L) / 1000L).coerceAtLeast(1L)
-        val delay = if (seconds >= 60L) "${(seconds + 59L) / 60L} min" else "$seconds s"
-        val first = intent.getStringExtra("replayFirstFailure").orEmpty()
-        val firstInfo = if (first.isBlank()) "" else "\n\nPremier echec observe : $first"
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Replay temporairement limite : HTTP 429")
-            .setMessage("Le serveur demande de ralentir les requetes.\nLes essais sont arretes, sans changement de variante ni de lecteur.\n\nAttends encore environ $delay avant un nouvel essai. Un delai serveur plus long reste possible.$firstInfo")
-            .setPositiveButton("Retour") { _, _ -> finish() }
-            .setOnCancelListener { finish() }
-            .show()
-    }
     // Repli replay borne : aucun changement de chaine, aucune boucle infinie.
     private val replayStartupWatchdog = object : Runnable {
         override fun run() {
             val p = player ?: return
-            if (isReplayMode && ReplayRateLimit.remainingMs(watchUrl) > 0L) {
-                showReplayRateLimit()
-                return
-            }
-            if (!isReplayMode || demarrageOk || !p.playWhenReady ||
-                ReplayUrls.replayStarted(p.playbackState == Player.STATE_READY, p.videoSize.width, p.currentPosition)) return
+            if (!isReplayMode || (p.playbackState == Player.STATE_READY && p.videoSize.width > 0)) return
             if (candIdx < candidates.size - 1) {
                 candIdx++
                 intent.putExtra("replayCandidateIndex", candIdx)
                 playCurrent()
             } else {
-                if (retryReplayUserAgent()) return
                 p.pause()
                 androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
                     .setTitle("Replay indisponible")
@@ -94,45 +61,6 @@ class PlayerActivity : AppCompatActivity() {
                     .show()
             }
         }
-    }
-    // V118 : une seule bascule d'identite HTTP, exclusivement pour le replay Xtream.
-    private fun retryReplayUserAgent(): Boolean {
-        if (isReplayMode && ReplayRateLimit.remainingMs(watchUrl) > 0L) {
-            showReplayRateLimit()
-            return true
-        }
-        if (!isReplayMode || Session.current?.type == "stalker" ||
-            intent.getBooleanExtra("replayUaRetry", false)) return false
-        intent.putExtra("replayUaRetry", true)
-        intent.putExtra("forceUa", ReplayUrls.alternateUserAgent(intent.getStringExtra("forceUa")))
-        intent.putExtra("replayCandidateIndex", 0)
-        intent.removeExtra("replayHlsRetryUrl")
-        recreate()
-        return true
-    }
-    private fun replayFailureDetail(error: Throwable, fallback: String): String {
-        var current: Throwable? = error
-        var depth = 0
-        while (depth++ < 10) {
-            val cause = current ?: break
-            if (cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)
-                return "HTTP ${cause.responseCode}"
-            if (cause is ReplayDataSource.RejectedArchive) return cause.reason
-            if (cause.cause === cause) break
-            current = cause.cause
-        }
-        return fallback
-    }
-    private fun rememberReplayFailure(detail: String): String {
-        val lines = intent.getStringArrayListExtra("replayFailureTrace") ?: arrayListOf<String>()
-        val ua = if (intent.getStringExtra("forceUa").orEmpty().startsWith("VLC")) "VLC" else "IPTV"
-        lines.add("Variante ${candIdx + 1}/${candidates.size} - $ua : $detail")
-        if (!intent.hasExtra("replayFirstFailure")) intent.putExtra("replayFirstFailure", lines.last())
-        while (lines.size > 12) lines.removeAt(0)
-        intent.putStringArrayListExtra("replayFailureTrace", lines)
-        val first = intent.getStringExtra("replayFirstFailure").orEmpty()
-        val prefix = if (first.isNotBlank() && lines.firstOrNull() != first) "Premier echec observe : $first\nDerniers essais :\n" else ""
-        return prefix + lines.joinToString("\n")
     }
     private var candIdx = 0
     // v386 : retenu le temps de la session. true = les films/series Stalker sont demandes
@@ -152,6 +80,9 @@ class PlayerActivity : AppCompatActivity() {
         )
         private var vodUaIdx = 0
     }
+    private var repliEntetesFait = false
+    // v388 : un seul nouvel essai immediat par lecture (limite de connexions du serveur).
+    private var reessai401Fait = false
 
     // v389 : ROND DE CHARGEMENT QUI TOURNE EN BOUCLE SANS AFFICHER LA CHAINE.
     // Le serveur accepte la connexion mais n envoie jamais d image : ExoPlayer reste
@@ -163,7 +94,6 @@ class PlayerActivity : AppCompatActivity() {
     private val startupWatchdog = object : Runnable {
         override fun run() {
             val p = player ?: return
-            if(!isLiveMode&&!isReplayMode)return
             if (demarrageOk) return
             val demarre = p.playbackState == Player.STATE_READY &&
                 (p.videoSize.width > 0 || p.currentPosition > 0L)
@@ -251,8 +181,91 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    // v412 : la video envoyee montre un cas precis : une premiere frame est
+    // affichee, le son continue, mais renderedOutputBufferCount ne progresse plus.
+    // On ne detache jamais la surface. On change automatiquement de variante
+    // de transport (.m3u8 / .ts / sans extension), puis on relance proprement.
+    private var lastFrames = -1L
+    private var lastFramesTs = 0L
+    private var frameRecoveryCount = 0
+    private val frozenImageWatchdog = object : Runnable {
+        override fun run() {
+            try {
+                val p = player
+                if (p != null && p.playWhenReady && p.playbackState == Player.STATE_READY &&
+                    p.currentTracks.containsType(androidx.media3.common.C.TRACK_TYPE_VIDEO)) {
+                    val frames = try {
+                        (p.videoDecoderCounters?.renderedOutputBufferCount ?: -1).toLong()
+                    } catch (_: Throwable) { -1L }
+                    val now = SystemClock.elapsedRealtime()
+                    if (frames >= 0L && frames != lastFrames) {
+                        lastFrames = frames
+                        lastFramesTs = now
+                        frameRecoveryCount = 0
+                    } else if (frames >= 0L && lastFramesTs > 0L && now - lastFramesTs >= 3500L) {
+                        lastFramesTs = now
+                        frameRecoveryCount++
+                        val oldIdx = candIdx
+                        val nextIdx = nextTransportCandidate(oldIdx)
+                        if (nextIdx >= 0 && nextIdx != oldIdx) {
+                            candIdx = nextIdx
+                            workingCandIdx = nextIdx
+                            playCurrent()
+                        } else if (isLiveMode) {
+                            // Toutes les variantes ont ete essayees : recree le pipeline
+                            // au bord du direct, sans manipuler la SurfaceView.
+                            p.stop()
+                            playCurrent()
+                            try { p.seekToDefaultPosition() } catch (_: Throwable) {}
+                        } else {
+                            val pos = p.currentPosition
+                            p.stop()
+                            playCurrent()
+                            if (pos > 0L) try { p.seekTo(pos) } catch (_: Throwable) {}
+                        }
+                    }
+                } else {
+                    lastFrames = -1L
+                    lastFramesTs = SystemClock.elapsedRealtime()
+                }
+            } catch (_: Throwable) {}
+            recoveryHandler.postDelayed(this, 1000L)
+        }
+    }
+
+    private fun nextTransportCandidate(current: Int): Int {
+        if (candidates.size <= 1) return -1
+        // Si le TS brut se fige, HLS est prioritaire. Sinon on essaie chaque
+        // autre forme une seule fois avant de reconstruire le meme pipeline.
+        val order = candidates.indices
+            .filter { it != current }
+            .sortedBy { if (candidates[it].substringBefore('?').endsWith(".m3u8", true)) 0 else 1 }
+        return order.firstOrNull() ?: -1
+    }
+
+
+    // v385 : detecte les contenus lourds (Full HD, 4K/UHD, HDR, Dolby Vision, HEVC).
+    // Sert uniquement a choisir le decodeur video : ces flux doivent etre decodes par
+    // la puce video. Le decodeur logiciel n arrive pas a suivre (saccades) et rend en
+    // plus les contenus HDR/Dolby tres sombres.
+    private fun estFullHd(nom: String): Boolean {
+        val t = (nom + " " + (try { Session.browseTitle } catch (e: Throwable) { "" }))
+            .uppercase()
+        return t.contains("FHD") || t.contains("1080") ||
+            t.contains("FULL HD") || t.contains("FULLHD") ||
+            t.contains("UHD") || t.contains("4K") || t.contains("2160") ||
+            t.contains("HDR") || t.contains("DOLBY") || t.contains("DV ") ||
+            t.contains("HEVC") || t.contains("H265") || t.contains("H.265")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // V142: replay keeps its current implementation in a separate private activity.
+        val requestedUrl=intent.getStringExtra("url").orEmpty()
+        if(intent.getBooleanExtra("replay",false)||ReplayUrls.isArchiveUrl(requestedUrl)){
+            val replayIntent=android.content.Intent(intent).setClass(this,ReplayPlayerActivity::class.java)
+            startActivity(replayIntent);finish();return
+        }
         // Plein ecran paysage
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -282,19 +295,6 @@ class PlayerActivity : AppCompatActivity() {
         watchUrl = url
         playbackOwnerId=Session.current?.id.orEmpty()
         isReplayMode = intent.getBooleanExtra("replay", false) || ReplayUrls.isArchiveUrl(url)
-        if (isReplayMode) {
-            val quotaPrefs = applicationContext.getSharedPreferences("kz_replay_rate_v120", android.content.Context.MODE_PRIVATE)
-            ReplayRateLimit.setStore(object : ReplayRateLimit.Store {
-                override fun read(host: String): Long = quotaPrefs.getLong(host, 0L)
-                override fun write(host: String, untilMs: Long) {
-                    quotaPrefs.edit().putLong(host, untilMs).apply()
-                }
-            })
-            if (ReplayRateLimit.remainingMs(url) > 0L) {
-                showReplayRateLimit()
-                return
-            }
-        }
         watchTitle = title
         watchLogo = intent.getStringExtra("logo") ?: ""
         watchKind = intent.getStringExtra("historyKind") ?: "live"
@@ -316,20 +316,17 @@ class PlayerActivity : AppCompatActivity() {
         val looksVod = lowerUrl.contains("/series/") || lowerUrl.contains("/movie/") ||
             pathOnly.endsWith(".mp4") || pathOnly.endsWith(".mkv") || pathOnly.endsWith(".avi") ||
             pathOnly.endsWith(".mov") || pathOnly.endsWith(".flv")
-        val isVod = mode == "vod" || looksVod || (!isReplayMode&&(watchKind=="movie"||watchKind=="series"))
+        val isVod = mode == "vod" || looksVod
         isLiveMode = !isVod
-        if(isVod&&!isReplayMode)vodUaIdx=intent.getIntExtra("vodUaIndex",0).coerceIn(0,UAS_VOD.size-1)
         if (isLiveMode) {
             // Chaines live : pas de boutons play/pause. On garde juste la barre du haut (titre + retour).
             playerView.useController = false
             // Live : la barre du haut (titre + X) s'affiche puis disparait toute seule apres 4 s.
             showTopBarTemporarily()
         }
-        if(isLiveMode&&!isReplayMode){
-            val original=Session.zapChannels.getOrNull(Session.zapIndex)
-            if(original!=null&&original.name==watchTitle)LiveHistory.touch(this,original)
-        }
+        if(isLiveMode){val original=Session.zapChannels.getOrNull(Session.zapIndex);if(original!=null&&original.name==watchTitle)LiveHistory.touch(this,original)}
         if (watchKind == "movie" || watchKind == "series") {
+            SessionCache.save(this)
             WatchHistory.touch(this, watchUrl, watchTitle, watchLogo, watchKind, watchSeriesName, watchSeriesLogo, watchSeriesId, watchSeriesCmd, watchSourceCmd, watchSourceStreamId, watchSourceContainerExt)
         }
         findViewById<TextView>(R.id.titleTv).text = title
@@ -347,9 +344,6 @@ class PlayerActivity : AppCompatActivity() {
             Toast.makeText(this, "Flux introuvable", Toast.LENGTH_LONG).show()
             finish(); return
         }
-
-        // V135: Media3 is the only playback engine; preserve the category/session snapshot.
-        if(isVod&&!isReplayMode)SessionCache.save(this)
 
         // v149 : httpFactory delegue a KzHttpDataSource qui applique le DNS choisi.
         // Mode DnsPref.SYSTEM (defaut) -> DefaultHttpDataSource inchange (aucun risque de regression).
@@ -406,17 +400,7 @@ class PlayerActivity : AppCompatActivity() {
         // chargement tournait pendant des dizaines de secondes sans rien afficher.
         // v388 : un morceau de flux qui repond mal est reessaye plusieurs fois avant
         // d abandonner (sur les connexions instables l image se figeait tout de suite).
-        val errPolicy = if (isReplayMode) {
-            object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(3) {
-                override fun getRetryDelayMsFor(
-                    loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo
-                ): Long {
-                    return if (ReplayRateLimit.isLimited(loadErrorInfo.exception)) {
-                        androidx.media3.common.C.TIME_UNSET
-                    } else super.getRetryDelayMsFor(loadErrorInfo)
-                }
-            }
-        } else androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(3)
+        val errPolicy = androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(3)
         // v413 : extracteur Media3 strictement standard pour le direct ET la VOD.
         // Les flags TS ALLOW_NON_IDR / DETECT_ACCESS_UNITS forces par KZ peuvent
         // produire une premiere frame puis bloquer la video sur certains flux,
@@ -429,17 +413,7 @@ class PlayerActivity : AppCompatActivity() {
             if (localScheme == "file" || localScheme == "content") {
                 androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
             } else httpFactory
-        // V119 : un seul GET d'archive, controle puis lu sur la meme connexion.
-        val checkedSourceFactory: androidx.media3.datasource.DataSource.Factory =
-            if (isReplayMode && plCur?.type != "stalker" && localScheme != "file" && localScheme != "content") {
-                ReplayDataSource.Factory(
-                    sourceFactory,
-                    listOf(url) + intent.getStringArrayListExtra("replayCandidates").orEmpty(),
-                    intent.getLongExtra("replayStartMs", 0L),
-                    intent.getLongExtra("replayEndMs", 0L)
-                )
-            } else sourceFactory
-        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(checkedSourceFactory)
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(sourceFactory)
             .setLoadErrorHandlingPolicy(errPolicy)
 
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
@@ -556,7 +530,8 @@ class PlayerActivity : AppCompatActivity() {
                 if (supplied.isNotEmpty()) supplied else listOf(url)
             }
             plCur?.type == "stalker" -> listOf(url)
-            // Exact clicked film/episode: never substitute titles or invent containers.
+            // VOD/episodes (Xtream, M3U) : on garde l'URL propre, mais si le portail renvoie
+            // du .avi non decodable par Android, on tente les containers alternatifs.
             isVod -> buildVodCandidates(url)
             else -> buildCandidates(url)
         }
@@ -564,7 +539,6 @@ class PlayerActivity : AppCompatActivity() {
             .coerceIn(0, candidates.lastIndex.coerceAtLeast(0)) else 0
         p.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                if(player!==p||isFinishing||isDestroyed)return
                 // Film/serie sans son : il y a des pistes audio mais aucune n'est selectionnee.
                 // On relache la limite de canaux (une seule fois) pour qu'une piste soit choisie
                 // -> retablit le son sans changer le comportement des fichiers qui ont deja du son.
@@ -579,7 +553,6 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if(player!==p||isFinishing||isDestroyed)return
                 // Certains VOD/episodes chargent bien la duree (STATE_READY) mais restent figes
                 // sans demarrer automatiquement sur Android TV. On force le play au moment READY.
                 if (playbackState == Player.STATE_READY && !didRestorePosition && (watchKind == "movie" || watchKind == "series")) {
@@ -593,6 +566,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 // v386 : la lecture demarre -> la methode d en-tetes utilisee est la bonne,
                 // on la garde pour les prochains films de la session.
+                if (playbackState == Player.STATE_READY) repliEntetesFait = false
                 // v389 : la chaine est partie -> plus besoin de surveiller le demarrage.
                 if (playbackState == Player.STATE_READY && p.videoSize.width > 0) {
                     demarrageOk = true
@@ -614,14 +588,15 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if(isFinishing||isDestroyed||player!==p)return
+                if(player!==p||isFinishing||isDestroyed)return
+                // Do not restore the historical retry storm on server rate/service refusals.
+                val httpCode=(error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+                if(httpCode==429||httpCode==503){
+                    recoveryHandler.removeCallbacks(startupWatchdog)
+                    showPlaybackError("Lecture impossible : HTTP $httpCode","Le serveur demande de patienter. Aucun changement de variante ni de signature HTTP.")
+                    return
+                }
                 if (isReplayMode) {
-                    val replayDetail = replayFailureDetail(error, error.errorCodeName)
-                    val replayTrace = rememberReplayFailure(replayDetail)
-                    if (ReplayRateLimit.isLimited(error)) {
-                        showReplayRateLimit()
-                        return
-                    }
                     recoveryHandler.removeCallbacks(replayStartupWatchdog)
                     recoveryHandler.removeCallbacks(startupWatchdog)
                     val replayUrl = candidates.getOrNull(candIdx).orEmpty()
@@ -646,16 +621,15 @@ class PlayerActivity : AppCompatActivity() {
                         playCurrent()
                         return
                     }
-                    if (retryReplayUserAgent()) return
                     val u = ReplayUrls.safeDiagnosticUrl(candidates.getOrNull(candIdx).orEmpty())
                     androidx.appcompat.app.AlertDialog.Builder(this@PlayerActivity)
-                        .setTitle("Replay impossible : " + replayDetail)
-                        .setMessage("Aucune variante d'archive n'a pu etre lue.\n" + replayTrace + "\n\n" + u)
+                        .setTitle("Replay impossible : " + error.errorCodeName)
+                        .setMessage("Aucune variante d'archive n'a pu etre lue.\n" + u)
                         .setPositiveButton("OK") { d, _ -> d.dismiss() }
                         .show()
                     return
                 }
-                if ((isLiveMode || referenceTransportAllowed(error)) && candIdx < candidates.size - 1) {
+                if (candIdx < candidates.size - 1) {
                     candIdx++
                     playCurrent()
                 } else if (isLiveMode) {
@@ -668,33 +642,38 @@ class PlayerActivity : AppCompatActivity() {
                         "HTTP ${c.responseCode}" else error.errorCodeName
                     // v386 : film/serie Stalker refuse par le serveur -> on retente UNE fois
                     // avec l autre methode d en-tetes, automatiquement et sans rien demander.
-                    if (!isLiveMode && Session.current?.type == "stalker" && !intent.getBooleanExtra("vodHeaderRetried",false) &&
-                        c is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException &&
-                        (c.responseCode==401||c.responseCode==403||c.responseCode==405||c.responseCode==458)
+                    if (!isLiveMode && Session.current?.type == "stalker" && !repliEntetesFait &&
+                        c is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
                     ) {
-                        intent.putExtra("vodHeaderRetried",true)
+                        repliEntetesFait = true
                         stalkerVodSansEntetes = !stalkerVodSansEntetes
                         try { recreate(); return } catch (e: Throwable) {}
                     }
-                    // One bounded retry after actual authentication refusal, not a startup probe.
+                    // v388 : le serveur a refuse le flux (401 Unauthorized, 403, trop de
+                    // connexions...). Avant d afficher quoi que ce soit, on retente une fois
+                    // le lien (la connexion precedente n est parfois pas encore liberee cote
+                    // serveur), puis on rejoue le meme lien avec une autre signature de
+                    // lecteur. C est ce qui bloquait chez certains clients seulement.
                     if (!isLiveMode && Session.current?.type != "stalker" &&
                         c is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException
                     ) {
                         val code = c.responseCode
-                        // One authentication retry on the same URL; never brute-force 429/503.
-                        if ((code==401||code==403)&&!intent.getBooleanExtra("vodHttpRetried",false)) {
-                            intent.putExtra("vodHttpRetried",true)
-                            recoveryHandler.postDelayed({if(!isFinishing&&!isDestroyed)playCurrent()},750)
-                            return
+                        if (code == 401 || code == 403 || code == 429 || code == 503 || code == 512) {
+                            if (!reessai401Fait) {
+                                reessai401Fait = true
+                                candIdx = 0
+                                recoveryHandler.postDelayed({ playCurrent() }, 2500)
+                                return
+                            }
+                            if (vodUaIdx < UAS_VOD.size - 1) {
+                                vodUaIdx++
+                                reessai401Fait = false
+                                try { recreate(); return } catch (e: Throwable) {}
+                            }
                         }
                     }
-                    // Diagnostic technique sans URL ni identifiant du fournisseur.
-                    // Never expose the MAC, account path, command or playback token in a screenshot.
                     val fmt=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat?:p.videoFormat
-                    val renderer=failedRendererTrackType(error)
-                    val track=when(renderer){androidx.media3.common.C.TRACK_TYPE_VIDEO->"video";androidx.media3.common.C.TRACK_TYPE_AUDIO->"audio";else->"inconnue"}
-                    val diag="Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nConfiguration vidéo : Media3 de reference 3.5.0 V112\n${PlaybackFailureDetails.describe(error)}\nKZ PLAYER : ${BuildConfig.VERSION_NAME}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} / Android ${android.os.Build.VERSION.RELEASE}"
-
+                    val diag="Lecteur : archive 3.5.3 V117\nKZ PLAYER : ${BuildConfig.VERSION_NAME}\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDecodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\n${PlaybackFailureDetails.describe(error)}"
                     showPlaybackError("Lecture impossible : $detail",diag)
                 }
             }
@@ -703,41 +682,16 @@ class PlayerActivity : AppCompatActivity() {
         lastProgressTs = SystemClock.elapsedRealtime()
         if (isLiveMode) recoveryHandler.postDelayed(stallWatchdog, 2000)
         // v389 : surveillance du demarrage (rond de chargement sans fin).
-        if (isLiveMode && !isReplayMode) recoveryHandler.postDelayed(startupWatchdog, 9000)
+        if (!isReplayMode) recoveryHandler.postDelayed(startupWatchdog, 9000)
         // v413 : aucun watchdog video ne relance ou ne change le flux.
-    }
-
-    // Media3 1.4.1 exposes rendererFormat, not a rendererType property.
-    // Unknown or missing formats must never be guessed to be video.
-    private fun failedRendererTrackType(error:PlaybackException):Int {
-        val exo=error as? androidx.media3.exoplayer.ExoPlaybackException
-            ?:return androidx.media3.common.C.TRACK_TYPE_UNKNOWN
-        if(exo.type!=androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER)
-            return androidx.media3.common.C.TRACK_TYPE_UNKNOWN
-        return androidx.media3.common.MimeTypes.getTrackType(exo.rendererFormat?.sampleMimeType)
-    }
-
-    // V141: retain HTTP rate/auth protections instead of trying transport variants on refusals.
-    private fun referenceTransportAllowed(error:PlaybackException):Boolean {
-        var cause:Throwable?=error
-        repeat(10){
-            val current=cause?:return true
-            if(current is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)
-                return current.responseCode !in listOf(401,403,429,503,512)
-            if(current.cause===current)return true
-            cause=current.cause
-        }
-        return true
     }
 
     private fun playCurrent() {
         val p = player ?: return
         val u = candidates.getOrNull(candIdx) ?: return
-        if (isReplayMode && ReplayRateLimit.remainingMs(watchUrl) > 0L) {
-            showReplayRateLimit()
-            return
-        }
-        if (isReplayMode) demarrageOk = false
+        closePlaybackError()
+        lastFrames = -1L
+        lastFramesTs = SystemClock.elapsedRealtime()
         // On laisse ExoPlayer auto-detecter le format (extension + Content-Type + redirections).
         // Forcer le MIME pouvait casser un .ts qui redirige en realite vers du HLS.
         p.setMediaItem(buildMediaItem(u))
@@ -750,7 +704,7 @@ class PlayerActivity : AppCompatActivity() {
         p.play()
         if (isReplayMode) {
             recoveryHandler.removeCallbacks(replayStartupWatchdog)
-            recoveryHandler.postDelayed(replayStartupWatchdog, 20000)
+            recoveryHandler.postDelayed(replayStartupWatchdog, 12000)
         }
     }
 
@@ -861,8 +815,6 @@ class PlayerActivity : AppCompatActivity() {
 
     // Bascule le lecteur en cours sur un nouveau flux VOD (episode suivant) sans recreer l'activite.
     private fun switchToVod(url: String, title: String, logo: String) {
-        intent.removeExtra("vodHeaderRetried")
-        intent.removeExtra("vodHttpRetried")
         val p = player ?: return
         watchUrl = url
         watchTitle = title
@@ -931,14 +883,6 @@ class PlayerActivity : AppCompatActivity() {
         }
         val labels = ArrayList<String>()
         val actions = ArrayList<() -> Unit>()
-        if(!isLiveMode&&!isReplayMode){
-            labels.add("Automatique (recommandé)")
-            actions.add {
-                p.trackSelectionParameters=p.trackSelectionParameters.buildUpon()
-                    .clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_AUDIO)
-                    .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_AUDIO,false).build()
-            }
-        }
         groups.forEachIndexed { gi, g ->
             for (ti in 0 until g.length) {
                 val fmt = g.getTrackFormat(ti)
@@ -1126,11 +1070,10 @@ class PlayerActivity : AppCompatActivity() {
             for (e in listOf("mkv", "mp4", "ts", "avi")) list.add(basePath + "." + e + query)
         }
         
-        // V141: a query may contain credentials or signatures. Never rewrite it.
-        val originalQuery=Uri.parse(url).encodedQuery
-        return list.filter {Uri.parse(it).encodedQuery==originalQuery}
+        return list.filter {ReferenceTransportGuard.sameResource(url,it)}
     }
 
+    // Construit les variantes d'URL a essayer pour un meme flux (live surtout).
     private fun buildCandidates(url: String): List<String> {
         val list = LinkedHashSet<String>()
         fun addVariants(u: String) {
@@ -1243,7 +1186,6 @@ class PlayerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         LicenseEnforcer.resume(this)
-        if(resumeVodAfterStop&&!isLiveMode&&!isReplayMode){resumeVodAfterStop=false;player?.play()}
     }
 
     override fun onPause() {
@@ -1252,7 +1194,6 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        if(!isLiveMode&&!isReplayMode)resumeVodAfterStop=player?.playWhenReady==true&&!isFinishing
         closePlaybackError()
         saveWatchProgress()
         super.onStop()

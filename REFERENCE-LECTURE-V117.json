@@ -1,0 +1,13 @@
+{
+  "sourceArchive": "KZ-PLAYER-GITHUB-COMPLET-3.5.3-V117.zip",
+  "sha256": "94c4486899dddb54b2b2c4173b015617a72590cb0b4ef3eedd777434af5d04ef",
+  "referencePlayerSha256": "2cd9d1f933938b07629825c7903cd819544c35f2c1d9bf0bf452a8d133dd227c",
+  "implementation": "Main PlayerActivity based on the full supplied V117 file, not reconstructed V112 settings. Replay isolated from current V141 implementation.",
+  "retainedSafetyChanges": [
+    "No raw URL or portal-log display",
+    "No 429/503 retry carousel",
+    "Immutable opaque query values and same resource identity",
+    "Modern owner/history/live recent handling",
+    "Safe dialog lifecycle"
+  ]
+}

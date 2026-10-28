@@ -1,0 +1,118 @@
+KZ PLAYER — 3.7.6 V142 — BASE COMPLÈTE DU LECTEUR FOURNI V117
+==========================================================
+La 3.7.5 V141 n'a pas résolu le problème selon le retour utilisateur. Elle
+reprenait des blocs de configuration V112 tout en gardant des différences
+récentes dans la conduite du lecteur. Il ne fallait pas l'assimiler à une
+restauration intégrale du comportement ancien.
+
+RÉFÉRENCE DE CETTE LIVRAISON
+--------------------------
+Archive utilisateur : KZ-PLAYER-GITHUB-COMPLET-3.5.3-V117.zip
+SHA256 : 94c4486899dddb54b2b2c4173b015617a72590cb0b4ef3eedd777434af5d04ef
+Cette fois, PlayerActivity.kt part du fichier COMPLET de cette archive,
+pas de la reconstruction V112 ni des réglages isolés de la 3.7.5.
+La nouvelle application reste en 3.7.6 pour permettre une mise à jour normale.
+Le numéro de version ne revient pas à 3.5.3.
+
+LECTURE CHAÎNES/FILMS/SÉRIES
+--------------------------
+Le chemin principal reprend : identité HTTP et en-têtes de construction du
+lecteur, source/extracteurs Media3, fabrique native, file synchrone, buffers,
+paramètres audio/vidéo, préparation/lecture, sélection des transports et
+conduite du démarrage/reconnexion de l'archive fournie. Les relances de
+démarrage VOD de cette référence sont donc rétablies, pas uniquement ses
+paramètres codec. Leur temps dépend du serveur ; aucun lancement instantané
+ou taux de réussite universel n'est garanti.
+Media3 reste le seul moteur ; l'extension FFmpeg existante reste audio.
+Pas de VLC, d'émulateur, de transcodage, de profil Dolby réécrit ni de limite
+1080p artificielle.
+Les méthodes qui construisent les mini-lecteurs live sont identiques à celles
+de l'archive V117 ; leurs ajouts récents d'historique/propriétaire restent.
+
+REPLAY ISOLÉ POUR NE PAS ANNULER SES PROTECTIONS
+----------------------------------------------
+Un replay est redirigé AVANT toute ouverture de source dans le lecteur privé
+ReplayPlayerActivity. Cette activité conserve le code de lecture replay de
+la 3.7.5 : gestion des archives, protections 429/Retry-After et absence de
+basculement involontaire au direct. Son code est identique à la version
+précédente, à son nom de classe et son libellé de diagnostic près.
+Aucune nouvelle application externe n'est ouverte. L'écran reste KZ PLAYER.
+
+ADAPTATIONS EXPLICITES PAR RAPPORT AU FICHIER BRUT V117
+-----------------------------------------------------
+Le fichier principal n'est pas identique intégralement à l'octet près à V117 :
+- retrait du message ancien contenant l'URL brute et les journaux de portail ;
+- maintien de la fenêtre d'erreur sûre, fermeture lors d'une nouvelle lecture,
+  indicateur de version et diagnostic technique sans identifiants ;
+- pas de carrousel sur refus serveur HTTP 429/503 directement signalés ;
+- variantes VOD limitées à la même ressource : aucun film/épisode approximatif,
+  aucune modification d'un paramètre d'authentification opaque. Le paramètre
+  stream peut changer de conteneur uniquement s'il contient un identifiant
+  numérique de ressource identique. Pas de variante de fichier local inventée ;
+- historique isolé par liste, identité de l'épisode suivant et ses extras,
+  récents live/propriétaires et sécurité de fermeture des menus conservés ;
+- aiguillage vers le replay privé décrit ci-dessus.
+Aucun de ces points n'est présenté comme une preuve de la cause de la panne.
+Les callbacks et relances historiques du lecteur normal ne sont plus remplacés
+par l'ancien assemblage V141.
+
+AMÉLIORATIONS HORS LECTEUR CONSERVÉES
+-----------------------------------
+Recherche approuvée et performances, catégories/cache, multi-listes, favoris,
+chaînes vues récemment, historique, fiches/séries, API fournisseurs, isolation
+des sessions Stalker, licences et révocations, personnalisation et identités
+séparées, signature et workflows conservés. Les méthodes de résolution restent
+dans l'API actuelle : la gestion de sessions et la recherche ne sont pas
+remplacées aveuglément par l'API 3.5.3 entière.
+Pas de modification Apps Script/Cloudflare ni de données utilisateur.
+
+INSTALLATION
+------------
+1. Extraire ce ZIP COMPLET dans la racine du dépôt KZPLAYER contenant app,
+   tools, .github et build.gradle. Remplacer les fichiers.
+2. Dans cette racine, exécuter :
+
+   python3 tools/release/remove_libvlc_v135.py
+
+   Le nom historique du script est conservé. Il est actualisé pour 3.7.6 et
+   retire les anciens fichiers VLC/essais VOD. Il NE retire PAS la nouvelle
+   activité replay ni le garde-fou de transport. Une extraction seule ne
+   supprime pas les fichiers obsolètes du dépôt ; ne pas sauter cette étape.
+3. Exactement ces trois commandes Git :
+
+   git add -A app tools/release/remove_libvlc_v135.py A-LIRE-3.7.6-V142.txt REFERENCE-LECTURE-V117.json
+   git commit -m "Reprend le lecteur complet V117 et preserve le replay - 3.7.6"
+   git push
+
+4. Attendre que le workflow Android officiel soit entièrement vert.
+5. Installer le nouvel APK officiel en mise à jour SANS désinstaller et sans
+   effacer les données. Vérifier la version 3.7.6 avant comparaison de lecture.
+   Les APK personnalisés restent dans leur circuit et package propres.
+6. Relancer le même contenu. En cas d'échec, le message doit afficher
+   Lecteur : archive 3.5.3 V117 et KZ PLAYER : 3.7.6. Une photo complète de ce
+   message permet de vérifier le chemin réellement installé, pas seulement
+   le nom du ZIP envoyé sur GitHub. Cadrer sans notes privées autour de l'écran.
+Les guides V112/V141 présents sont historiques ; suivre celui-ci.
+
+VÉRIFICATIONS ET LIMITES
+-----------------------
+87 méthodes JVM locales, dont 18 tests du garde-fou de variantes (identifiant,
+origine, port, jetons opaques, paramètres stream numériques, fragments et
+fichiers locaux), 37 contrôles de recherche Java et 137 XML analysés.
+Comparaison des blocs de code de lecture avec l'archive réelle : construction
+HTTP/source/fabrique/buffers, audio/vidéo, démarrage/reconnexion, sous-titres et
+préparation/lecture. Les blocs testés sont identiques à ceux de l'archive,
+hormis la fermeture sûre du dialogue précédant une nouvelle lecture.
+Code de replay actuel vérifié identique après renommage de classe.
+Les fichiers API, recherche, catégories, historique, fiches et sécurité sont
+vérifiés inchangés par rapport à 3.7.5.
+Extraction simulée et nettoyage idempotent sur les anciennes versions.
+
+Les tests locaux utilisant des interfaces Android minimales ne remplacent
+PAS une compilation Android/Kotlin, un workflow GitHub réussi ni une lecture
+native sur X96Q. Aucun APK signé, push ou installation réalisé ici. Cette
+livraison est une restauration plus fidèle, PAS une preuve que la vidéo, le
+son, le HDR et la fluidité fonctionnent maintenant. Si la panne persiste, il
+faudra encore comparer l'archive de référence réellement installée et son
+résultat actuel sur le même contenu ; sa réussite passée ne garantit pas
+l'état actuel du flux ou du boîtier.
