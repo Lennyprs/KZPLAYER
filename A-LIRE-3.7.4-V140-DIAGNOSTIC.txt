@@ -1,0 +1,73 @@
+KZ PLAYER 3.7.4 — V140 — DIAGNOSTIC DANS LE MESSAGE D'ERREUR
+==========================================================
+IMPORTANT : cette version ne corrige pas la vidéo. Elle complète uniquement
+le message d'erreur pour lire les informations natives disponibles et cibler
+la suite. Base 3.7.3 V139 conservée : adaptation HEVC + son PCM V138.
+
+POUR L'UTILISATEUR
+-----------------
+1. Extraire le ZIP complet à la racine du dépôt local KZPLAYER et accepter les
+   remplacements. La racine contient app, tools, .github et build.gradle.
+2. Lancer à cette racine :
+
+   python3 tools/release/remove_libvlc_v135.py
+
+3. Puis exactement ces trois commandes Git :
+
+   git add -A app tools/release/remove_libvlc_v135.py A-LIRE-3.7.4-V140-DIAGNOSTIC.txt
+   git commit -m "Ajoute le diagnostic natif de lecture - 3.7.4"
+   git push
+
+4. Attendre le workflow officiel Android entièrement vert.
+5. Installer le nouvel APK officiel en mise à jour, sans désinstallation ni
+   effacement des données. Vérifier 3.7.4 dans les paramètres de l'application.
+6. Ouvrir le même Lilo et Stitch Dolby Vision, puis appuyer sur Lire UNE fois.
+7. À l'erreur, photographier les lignes Causes, Code codec, Diagnostic codec,
+   Operation Android, Surface et KZ PLAYER. Si le texte défile, faire deux photos
+   pour capturer le haut puis le bas. Cadrer uniquement la fenêtre de l'application,
+   sans notes manuscrites ou autres informations privées autour de l'écran.
+Ne pas transmettre de playlist, URL de flux, identifiant, MAC ou mot de passe.
+Aucune commande ADB, capture réseau ou installation d'outil supplémentaire.
+Aucun déploiement Apps Script/Cloudflare nécessaire.
+Les guides antérieurs inclus sont historiques : suivre celui-ci pour cette version.
+
+DONNÉES AFFICHÉES
+-----------------
+- Chaîne bornée à 10 exceptions, noms sélectionnés sur liste fermée.
+- Code de l'erreur codec tel que fourni par Media3 ; zéro/inconnu est présenté
+  comme non transmis (ce zéro n'est pas une preuve de succès).
+- Diagnostic Android uniquement au format android.media.MediaCodec.error_N
+  ou error_neg_N ; autre texte volontairement masqué, même si un firmware
+  fournit un diagnostic propriétaire. Aucun message brut d'exception n'est lu.
+- Nom d'une opération MediaCodec connue présent dans les traces : configure,
+  dequeueOutputBuffer, queueInputBuffer, releaseOutputBuffer, etc. Pas de trace
+  brute, de chemin local ou de numéro de session.
+- Indicateur isSurfaceValid de Media3 quand l'exception vidéo le fournit.
+  Attention : Media3 le marque aussi vrai si la surface référencée est nulle.
+  Un indicateur valide ne prouve donc ni l'existence d'une image ni la bonne
+  configuration de l'affichage ; invalide constitue un indice plus précis.
+- Version KZ PLAYER et version Android, en plus du décodeur/format déjà affichés.
+Si Android n'a pas transmis le détail, l'application l'indique sans l'inventer.
+Les exceptions imbriquées cycliques ou trop longues ne bloquent pas l'écran.
+Pas d'envoi réseau, d'écriture de rapport, ni de modification du flux.
+
+VÉRIFICATIONS
+-------------
+154 méthodes JVM locales, 37 contrôles recherche Java, 17 contrôles audio,
+23 contrôles de configuration vidéo, 14 contrôles du collecteur de diagnostic,
+137 XML. Les cas de diagnostic comprennent messages/URL/chaînes inconnues
+masqués, diagnostic natif positif/négatif, opération Android, surface,
+absence de code et chaîne d'exceptions cyclique ou excessive.
+Les tests de collecteur/fabriques utilisent des interfaces Android/Media3
+locales minimales : ils ne remplacent PAS une compilation Android/Kotlin,
+le workflow GitHub, un APK signé ou une lecture réelle sur X96Q.
+Les champs Media3 utilisés ont été vérifiés dans les sources de la version 1.4.1.
+
+PORTÉE
+------
+Seuls versionName, garde de version du nettoyage et message de diagnostic sont
+modifiés dans les fichiers existants. Helpers et tests de diagnostic ajoutés.
+Aucun changement de décodage, reprise, réseau, source exacte, recherche,
+catégories, licences, favoris, historique, signature ou calcul CI du versionCode.
+Aucun push, build signé ou installation effectué ici. Aucun résultat de lecture
+ou de son réel garanti ; cette livraison sert exclusivement au diagnostic.

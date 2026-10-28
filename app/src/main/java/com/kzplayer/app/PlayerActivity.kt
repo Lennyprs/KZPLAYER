@@ -714,7 +714,7 @@ class PlayerActivity : AppCompatActivity() {
                     val renderer=failedRendererTrackType(error)
                     val track=when(renderer){androidx.media3.common.C.TRACK_TYPE_VIDEO->"video";androidx.media3.common.C.TRACK_TYPE_AUDIO->"audio";else->"inconnue"}
                     val sourceInfo=if(!isLiveMode&&!isReplayMode)"Contenu reçu : ${vodSourceHints.kind.label}\n" else ""
-                    val diag=sourceInfo+"Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nConfiguration vidéo : $videoConfigurationLabel\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\nMedia3 utilise les décodeurs réellement disponibles sur cet appareil. La préférence HD/FHD choisit uniquement une piste fournie par la source. Aucun transcodage ni émulateur vidéo n'est intégré."
+                    val diag=sourceInfo+"Piste : $track\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDécodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\nConfiguration vidéo : $videoConfigurationLabel\n${PlaybackFailureDetails.describe(error)}\nKZ PLAYER : ${BuildConfig.VERSION_NAME}\nAppareil : ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} / Android ${android.os.Build.VERSION.RELEASE}"
 
                     showPlaybackError("Lecture impossible : $detail",diag)
                 }
