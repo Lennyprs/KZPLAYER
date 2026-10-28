@@ -1,8 +1,0 @@
-LibVLC Android 3.6.5 — VideoLAN and contributors
-Dependency: org.videolan.android:libvlc-all:3.6.5
-Declared library license: GNU LGPL version 2.1 (see bundled license).
-Library project/source/build scripts: https://code.videolan.org/videolan/libvlcjni
-Native VLC source: https://code.videolan.org/videolan/vlc
-Artifact: https://repo1.maven.org/maven2/org/videolan/android/libvlc-all/3.6.5/
-This application integrates the library API, not the GPL VLC Android application UI.
-Before binary redistribution, provide the exact corresponding library sources/build material and satisfy LGPL notices and replacement/relinking requirements. Source project links alone do not assert compliance for a shipped binary.

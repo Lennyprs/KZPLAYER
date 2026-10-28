@@ -1,0 +1,95 @@
+KZ PLAYER — 3.7.0 / V135 — MEDIA3 UNIQUEMENT
+==========================================
+Cette livraison contient les sources complètes, pas un APK déjà compilé/signé.
+Elle remplace V134 (3.6.7). Les anciens guides présents dans l'archive sont
+historiques : utiliser UNIQUEMENT les étapes de ce guide pour cette livraison.
+
+INSTALLATION DANS LE DÉPÔT LOCAL
+-------------------------------
+1. Extraire le ZIP dans le dossier local KZPLAYER qui contient déjà .github,
+   app, tools, build.gradle et settings.gradle. Accepter le remplacement.
+   Ne pas créer un deuxième dossier KZPLAYER à l'intérieur du dépôt.
+2. IMPORTANT : extraire un ZIP ne supprime pas les anciens fichiers.
+   Dans un terminal ouvert à la racine du dépôt KZPLAYER, exécuter :
+
+   python3 tools/release/remove_libvlc_v135.py
+
+   Ce script retire exclusivement les 14 anciens fichiers VLC/anciens helpers
+   et tests listés dans le script. Il ne touche pas aux licences, listes,
+   identifiants, favoris, téléchargements, panneaux, clés ou signatures.
+   Il refuse de travailler sur une autre version et peut être relancé.
+3. Exécuter exactement ces trois lignes Git :
+
+   git add -A app tools/release/remove_libvlc_v135.py A-LIRE-3.7.0-V135.txt
+   git commit -m "Retire VLC et remet Media3 seul - 3.7.0"
+   git push
+
+   Le -A est indispensable : il enregistre aussi les suppressions VLC.
+4. Dans GitHub > Actions, attendre la réussite complète du workflow officiel
+   de compilation/signature Android. Cette livraison ne prouve PAS sa réussite.
+5. Installer l'APK officiel de ce nouveau build comme mise à jour, SANS
+   désinstaller KZ PLAYER et SANS effacer ses données. Le code de version
+   reste calculé par le workflow existant ; la signature n'est pas modifiée.
+   Les variantes personnalisées gardent leurs identités séparées.
+   Aucun changement Apps Script ou Cloudflare n'est nécessaire.
+
+MODIFICATIONS RÉELLES
+--------------------
+- Retrait de la dépendance libvlc-all, de l'activité VLC, de son pont réseau,
+  de sa file de libération et des helpers devenus inutiles. Aucune bascule VLC.
+- Media3 1.4.1 reste le seul moteur du lecteur Android principal.
+- FFmpeg audio Jellyfin 1.3.1+2 et son activation Media3 sont conservés.
+- Pipeline vidéo Media3 standard, repli natif à l'initialisation du décodeur,
+  file MediaCodec synchrone et SurfaceView. Retrait des modifications de profil
+  Dolby/HEVC et du carrousel expérimental de décodeurs KZ.
+- Dès l'ouverture d'un film/épisode, préférence vidéo <=1920x1080 et AVC puis
+  HEVC parmi les représentations réellement disponibles dans CE MediaItem.
+  Ce n'est pas une recherche d'un autre film dans le catalogue.
+- Pas de prélecture de 9 secondes ni de surveillance de compteurs d'images
+  qui coupe la VOD. Le lecteur prépare immédiatement la source sélectionnée.
+- Seuil de données pour démarrer la VOD ramené de 1500 à 1000 ms ; ce seuil
+  n'est pas une promesse de démarrage en une seconde (réseau, serveur, index
+  du fichier et décodeur peuvent ajouter du délai). Réserve de buffer conservée.
+- Après une vraie erreur vidéo seulement : un unique repli possible sur une
+  piste AVC/HEVC plus petite, déclarée prise en charge, exposée par le même
+  contenu ouvert. Aucun changement de titre, d'épisode, de lien signé ou de
+  lecteur. Sans piste éligible, pas de boucle de tentatives.
+- VOD : aucune invention d'extensions .avi/.mkv/.mp4 ; l'URL choisie est gardée.
+  Une seule reprise d'authentification après un vrai refus 401/403 ; pas de
+  balayage de six identités HTTP. Reprise d'en-têtes Stalker bornée séparément.
+- Reprise d'historique isolée par serveur/titre/type. Métadonnées de l'épisode
+  suivant conservées également dans l'intent en cas de recréation de l'écran.
+- Recherche approuvée, caches de catégories V134, API fournisseurs, historique,
+  licences, favoris, identité/signature et workflows préservés. Le comportement
+  de reprise d'erreur replay et le watchdog de reconnexion du direct sont
+  inchangés. Aucune modification des panneaux ou du backend.
+
+CE QUE CETTE VERSION NE FAIT PAS
+-------------------------------
+- Aucun émulateur matériel, aucun transcodage vidéo et aucun tone mapping
+  Dolby Vision vers SDR n'ont été intégrés.
+- FFmpeg présent avec Media3 est un décodeur AUDIO, pas un convertisseur vidéo.
+- Une préférence 1080p choisit une vraie piste inférieure si elle existe.
+  Elle ne transforme PAS un fichier 4K unique en fichier FHD moins lourd.
+  Avec une seule piste 4K, Media3 dépend toujours des décodeurs du boîtier.
+- La compatibilité d'une éventuelle base HDR10/HEVC Dolby Vision est déterminée
+  par Media3 et le format réel ; aucun profil ni prise en charge n'est falsifié.
+- IMAX est un label/format de présentation, pas un décodeur universel. Le codec,
+  le profil, la définition, le débit et les capacités réelles restent décisifs.
+- Si la source n'offre qu'une piste incompatible, il faut une autre version
+  réelle du même contenu ou un vrai transcodage côté serveur. Aucun résultat
+  approximatif de catalogue n'est choisi à la place du film demandé.
+
+VÉRIFICATIONS ET LIMITES
+-----------------------
+Vérifications locales : 78 méthodes de test JVM (dont 23 de sélection vidéo),
+37 contrôles de recherche Java, lecture de 137 fichiers XML, contrôles de
+portée et simulation d'extraction sur un ancien dépôt puis nettoyage VLC.
+Les tests JVM utilisent des interfaces Android/JUnit locales minimales :
+ils ne sont PAS une compilation Android/Kotlin ou un test de décodeur natif.
+
+Non vérifié dans cet environnement : compilation Android complète, chargement
+JNI FFmpeg sur le boîtier, lecture réelle 4K/Dolby Vision/IMAX, image en mouvement,
+son, fluidité et délai de démarrage. Aucun APK signé ou push GitHub n'a été
+réalisé ici. La compilation officielle et la lecture physique restent à établir.
+Aucune promesse de lecture parfaite/instantanée sur tous les boîtiers.
