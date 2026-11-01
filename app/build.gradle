@@ -5,13 +5,13 @@ plugins {
 
 android {
     namespace 'com.kzplayer.app'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId (System.getenv("BRAND_PACKAGE") ?: "com.kzplayer.app")
         buildConfigField "String", "BRAND_ID", "\"${System.getenv('BRAND_ID') ?: ''}\""
         minSdk 21
-        targetSdk 34
+        targetSdk 35
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // v392 : decalage +400 pour rester au-dessus des anciens builds Kozukaa
         // (qui allaient jusqu a 391-392). Sinon l auto-update dans l app dit "deja
@@ -29,7 +29,7 @@ android {
             vcCode = runNum + 400
         }
         versionCode vcCode
-        versionName "3.7.7"
+        versionName "3.7.8"
     }
 
     buildFeatures { buildConfig true }
