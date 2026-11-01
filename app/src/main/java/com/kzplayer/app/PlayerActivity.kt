@@ -27,6 +27,9 @@ import kotlinx.coroutines.launch
 class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private var playbackOwnerId=""
+    private var vodCodecFactory:VodAsyncRenderersFactory?=null
+    private val vodCodecRecovery=VodPlaybackPolicy.RecoveryBudget()
+    private var compatibleVideoSelected=false
     private var activeVideoDecoderName=""
     private var playbackErrorDialog:PlaybackErrorDialog?=null
     private fun closePlaybackError(){val d=playbackErrorDialog;playbackErrorDialog=null;d?.dismiss()}
@@ -260,6 +263,12 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if(intent.getBooleanExtra("vodCodecRecoveryUsed",false)){
+            vodCodecRecovery.markUsed()
+            currentSubUrl=intent.getStringExtra("vodCodecSubUrl")
+            currentSubLang=intent.getStringExtra("vodCodecSubLang").orEmpty()
+            currentSubFormat=intent.getStringExtra("vodCodecSubFormat")?:"srt"
+        }
         // V142: replay keeps its current implementation in a separate private activity.
         val requestedUrl=intent.getStringExtra("url").orEmpty()
         if(intent.getBooleanExtra("replay",false)||ReplayUrls.isArchiveUrl(requestedUrl)){
@@ -419,10 +428,12 @@ class PlayerActivity : AppCompatActivity() {
         // v411 : pipeline Media3 standard. Aucun ordre de codec force par KZ :
         // Android choisit le decodeur adapte au firmware, avec repli natif si
         // l initialisation echoue. FFmpeg reste uniquement un secours audio.
-        val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
+        val renderersFactory = (if(isVod&&!isReplayMode){
+            VodAsyncRenderersFactory(this).also {vodCodecFactory=it}
+        }else androidx.media3.exoplayer.DefaultRenderersFactory(this))
             .setEnableDecoderFallback(true)
-            // v413 : evite le gel MediaCodec "premiere frame + son uniquement"
-            // observe sur certains boitiers avec la file asynchrone Android.
+            // Baseline synchronous for live/audio. V143 VOD router changes ONLY
+            // the observed Allwinner HEVC video decoder to asynchronous mode.
             .forceDisableMediaCodecAsynchronousQueueing()
             .setExtensionRendererMode(
                 androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
@@ -532,13 +543,15 @@ class PlayerActivity : AppCompatActivity() {
             plCur?.type == "stalker" -> listOf(url)
             // VOD/episodes (Xtream, M3U) : on garde l'URL propre, mais si le portail renvoie
             // du .avi non decodable par Android, on tente les containers alternatifs.
-            isVod -> buildVodCandidates(url)
+            isVod -> listOf(url)
             else -> buildCandidates(url)
         }
         candIdx = if (isReplayMode) intent.getIntExtra("replayCandidateIndex", 0)
             .coerceIn(0, candidates.lastIndex.coerceAtLeast(0)) else 0
         p.addListener(object : Player.Listener {
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                if(player!==p||isFinishing||isDestroyed)return
+                if(!isLiveMode&&!isReplayMode)preferCompatibleVodTrack(p,tracks)
                 // Film/serie sans son : il y a des pistes audio mais aucune n'est selectionnee.
                 // On relache la limite de canaux (une seule fois) pour qu'une piste soit choisie
                 // -> retablit le son sans changer le comportement des fichiers qui ont deja du son.
@@ -553,13 +566,16 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if(player!==p||isFinishing||isDestroyed)return
                 // Certains VOD/episodes chargent bien la duree (STATE_READY) mais restent figes
                 // sans demarrer automatiquement sur Android TV. On force le play au moment READY.
                 if (playbackState == Player.STATE_READY && !didRestorePosition && (watchKind == "movie" || watchKind == "series")) {
                     didRestorePosition = true
                     val entry=WatchHistory.all(this@PlayerActivity).firstOrNull {it.title==watchTitle&&it.kind==watchKind&&it.playlistId==playbackOwnerId}
                     val resume=entry?.let {if(it.durationMs>0&&it.durationMs-it.positionMs<10000L)0L else it.positionMs.coerceAtLeast(0L)}?:0L
-                    if (resume > 0L) p.seekTo(resume)
+                    val retryResume=intent.getLongExtra("vodCodecResumeMs",-1L)
+                    if (retryResume >= 0L) {if(retryResume>0L)p.seekTo(retryResume)}
+                    else if (resume > 0L) p.seekTo(resume)
                 }
                 if (playbackState == Player.STATE_READY && p.playWhenReady && !p.isPlaying) {
                     p.play()
@@ -589,6 +605,35 @@ class PlayerActivity : AppCompatActivity() {
 
             override fun onPlayerError(error: PlaybackException) {
                 if(player!==p||isFinishing||isDestroyed)return
+                if(!isLiveMode&&!isReplayMode){
+                    recoveryHandler.removeCallbacks(startupWatchdog)
+                    val fmt=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat?:p.videoFormat
+                    val video=androidx.media3.common.MimeTypes.getTrackType(fmt?.sampleMimeType)==androidx.media3.common.C.TRACK_TYPE_VIDEO
+                    val codecFailure=VodPlaybackPolicy.decoderFailure(error.errorCodeName,video)
+                    val target=vodCodecFactory?.lastVideoMode=="async-allwinner-hevc"
+                    if(codecFailure){
+                        if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)&&vodCodecRecovery.claim(true,target)){
+                            val oldEntry=if(!didRestorePosition)WatchHistory.all(this@PlayerActivity).firstOrNull {it.title==watchTitle&&it.kind==watchKind&&it.playlistId==playbackOwnerId} else null
+                            val retryPosition=oldEntry?.let {if(it.durationMs>0&&it.durationMs-it.positionMs<10000L)0L else it.positionMs.coerceAtLeast(0L)}?:p.currentPosition.coerceAtLeast(0L)
+                            intent.putExtra("vodCodecRecoveryUsed",true)
+                                .putExtra("vodCodecResumeMs",retryPosition)
+                                .putExtra("vodCodecSubUrl",currentSubUrl)
+                                .putExtra("vodCodecSubLang",currentSubLang)
+                                .putExtra("vodCodecSubFormat",currentSubFormat)
+                                .putExtra("url",watchUrl)
+                                .putExtra("vodFirstCodecFailure",error.errorCodeName)
+                            saveWatchProgress()
+                            closePlaybackError()
+                            player=null
+                            playerView.player=null
+                            try {p.release()}catch(_:RuntimeException){}
+                            recreate()
+                            return
+                        }
+                        showVodFailure(error,p)
+                        return
+                    }
+                }
                 // Do not restore the historical retry storm on server rate/service refusals.
                 val httpCode=(error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
                 if(httpCode==429||httpCode==503){
@@ -672,9 +717,7 @@ class PlayerActivity : AppCompatActivity() {
                             }
                         }
                     }
-                    val fmt=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat?:p.videoFormat
-                    val diag="Lecteur : archive 3.5.3 V117\nKZ PLAYER : ${BuildConfig.VERSION_NAME}\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDecodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\n${PlaybackFailureDetails.describe(error)}"
-                    showPlaybackError("Lecture impossible : $detail",diag)
+                    showVodFailure(error,p)
                 }
             }
         })
@@ -682,8 +725,44 @@ class PlayerActivity : AppCompatActivity() {
         lastProgressTs = SystemClock.elapsedRealtime()
         if (isLiveMode) recoveryHandler.postDelayed(stallWatchdog, 2000)
         // v389 : surveillance du demarrage (rond de chargement sans fin).
-        if (!isReplayMode) recoveryHandler.postDelayed(startupWatchdog, 9000)
+        if (isLiveMode&&!isReplayMode) recoveryHandler.postDelayed(startupWatchdog, 9000)
         // v413 : aucun watchdog video ne relance ou ne change le flux.
+    }
+
+    private fun showVodFailure(error:PlaybackException,p:ExoPlayer){
+        recoveryHandler.removeCallbacks(startupWatchdog)
+        val fmt=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat?:p.videoFormat
+        val mode=vodCodecFactory?.lastVideoMode?:"standard-synchronous"
+        val first=intent.getStringExtra("vodFirstCodecFailure").orEmpty()
+        val firstSafe=if(first=="ERROR_CODE_DECODING_FAILED"||first=="ERROR_CODE_DECODER_INIT_FAILED")first else "aucune"
+        val diag="KZ PLAYER : ${BuildConfig.VERSION_NAME}\nVideo : $mode\nRecuperation codec : ${if(intent.getBooleanExtra("vodCodecRecoveryUsed",false))"1/1" else "0/1"}\nPremiere erreur codec : $firstSafe\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDecodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\n1080p : ${if(compatibleVideoSelected)"piste compatible du meme contenu selectionnee" else "aucune substitution ni conversion forcee"}\n${PlaybackFailureDetails.describe(error)}"
+        showPlaybackError("Lecture impossible : ${error.errorCodeName}",diag)
+    }
+
+    // Select an actual supported SDR representation of THIS media item only.
+    // No URL rewrite, catalogue lookup, transcode or HDR tone mapping.
+    private fun preferCompatibleVodTrack(p:ExoPlayer,tracks:androidx.media3.common.Tracks){
+        if(compatibleVideoSelected)return
+        val videoGroups=tracks.groups.filter {it.type==androidx.media3.common.C.TRACK_TYPE_VIDEO}
+        val unsupportedSelected=videoGroups.any {g->(0 until g.length).any {g.isTrackSelected(it)&&!g.isTrackSupported(it)}}
+        if(!unsupportedSelected)return
+        var bestGroup:androidx.media3.common.Tracks.Group?=null
+        var bestIndex=-1
+        var bestPixels=0L
+        for(g in videoGroups)for(i in 0 until g.length){
+            val f=g.getTrackFormat(i)
+            val transfer=f.colorInfo?.colorTransfer
+            val hdr=transfer==androidx.media3.common.C.COLOR_TRANSFER_ST2084||transfer==androidx.media3.common.C.COLOR_TRANSFER_HLG
+            if(VodPlaybackPolicy.compatible1080(g.isTrackSupported(i),f.sampleMimeType,f.width,f.height,hdr)){
+                val pixels=f.width.toLong()*f.height.toLong()
+                if(pixels>bestPixels){bestPixels=pixels;bestGroup=g;bestIndex=i}
+            }
+        }
+        val chosen=bestGroup?:return
+        compatibleVideoSelected=true
+        p.trackSelectionParameters=p.trackSelectionParameters.buildUpon()
+            .setOverrideForType(androidx.media3.common.TrackSelectionOverride(chosen.mediaTrackGroup,listOf(bestIndex))).build()
+        android.util.Log.i("KZVodCodec","selected existing supported SDR video <=1080p; same media item")
     }
 
     private fun playCurrent() {
@@ -816,6 +895,16 @@ class PlayerActivity : AppCompatActivity() {
     // Bascule le lecteur en cours sur un nouveau flux VOD (episode suivant) sans recreer l'activite.
     private fun switchToVod(url: String, title: String, logo: String) {
         val p = player ?: return
+        vodCodecRecovery.reset()
+        compatibleVideoSelected=false
+        intent.removeExtra("vodCodecRecoveryUsed")
+        intent.removeExtra("vodCodecResumeMs")
+        intent.removeExtra("vodFirstCodecFailure")
+        intent.removeExtra("vodCodecSubUrl")
+        intent.removeExtra("vodCodecSubLang")
+        intent.removeExtra("vodCodecSubFormat")
+        p.trackSelectionParameters=p.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_VIDEO).build()
         watchUrl = url
         watchTitle = title
         watchLogo = logo
@@ -829,7 +918,7 @@ class PlayerActivity : AppCompatActivity() {
         didRestorePosition = true
         audioRecoveryDone = false
         currentSubUrl = null
-        candidates = if(Session.current?.type=="stalker")listOf(url) else buildVodCandidates(url)
+        candidates = listOf(url)
         candIdx = 0
         playCurrent()
     }

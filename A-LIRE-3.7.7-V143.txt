@@ -1,0 +1,122 @@
+KZ PLAYER 3.7.7 V143 — CORRECTIF VOD CIBLÉ À PARTIR DES JOURNAUX ADB
+================================================================
+IMPORTANT : CE ZIP CONTIENT LES SOURCES COMPLÈTES, PAS UN APK COMPILÉ.
+La compilation Android officielle doit encore réussir sur GitHub avant installation.
+
+CE QUI A ÉTÉ OBSERVÉ
+-------------------
+Dans les captures utilisateur TiviMate et KZ : même décodeur matériel
+OMX.allwinner.video.decoder.hevc, dimensions configurées 3636 x 2160,
+demande de 16 tampons vidéo et délai dépassé dans le pilote.
+TiviMate annonce le mode asynchrone et montre deux initialisations ; la trace
+ne prouve pas à elle seule si la seconde résulte d'une récupération automatique
+ou d'une action utilisateur. KZ 3.7.6 échoue dans la récupération synchrone
+des tampons de sortie, puis son nettoyage flush échoue également. Les variantes
+de liens suivantes produisent des erreurs de conteneur qui masquent la première
+panne. La première capture KZ concernait en réalité 3.4.0 ; la seconde a été
+fournie après l'annonce de la mise à jour 3.7.6.
+
+PAS DE FAUSSE PROMESSE DE CONVERSION 1080P
+---------------------------------------
+Les traces ne montrent PAS une conversion générale TiviMate 4K/Dolby vers 1080p.
+Le pilote annonce même bScaleDownEn = 0 pendant ces essais.
+Un réglage de taille d'affichage ou de sélection de piste ne transcode pas
+un fichier 4K à piste vidéo unique. Il n'y a ici ni encodeur vidéo, ni serveur,
+ni émulateur, ni conversion HDR/Dolby vers SDR. FFmpeg reste une extension audio.
+Cette version ne prétend pas reproduire tout le code interne de TiviMate.
+
+MODIFICATIONS
+-------------
+1. Mode asynchrone vidéo ciblé : uniquement le décodeur HEVC Allwinner observé,
+   en VOD films/séries, Android API >=23 et sans MediaCrypto. Aucun profil Dolby,
+   CSD/SPS/PPS, contenu réseau, couleur ou résolution n'est réécrit.
+   Les autres décodeurs et l'audio gardent le mode synchrone de référence.
+   Le live utilise toujours la fabrique de référence ; le replay reste isolé.
+2. Une seule récupération après une erreur vidéo de décodage/initialisation de
+   ce chemin ciblé. L'ancien ExoPlayer est libéré, puis l'activité est recréée
+   sur EXACTEMENT le même lien. Le budget est mémorisé dans l'intent ; il n'est
+   pas réinitialisé quand le lecteur devient READY, lors des sous-titres ou lors
+   de la recréation. Nouvel épisode : nouveau budget. Historique propriétaire,
+   position et sous-titres externes conservés pour cette reprise.
+   La libération d'un codec natif défectueux peut prendre du temps ; aucune
+   garantie de démarrage immédiat ni de récupération native n'est donnée.
+3. VOD : une seule URL source ; suppression de la cascade d'extensions et de la
+   relance chronométrée VOD qui pouvait réinitialiser le démarrage. Les relances
+   normales de chargement Media3 restent. La logique live n'est pas modifiée.
+   Une erreur de codec ne provoque pas un changement de signature HTTP.
+4. Représentation compatible réelle : si la piste sélectionnée dépasse les
+   capacités annoncées ET si LE MÊME média contient une autre piste SDR AVC/HEVC
+   prise en charge, <=1920x1080 (ou orientation portrait équivalente), sélection
+   de la plus grande piste admissible disponible. Une seule sélection automatique
+   par média ; aucun nouveau GET de sonde, aucune recherche d'un autre film.
+   S'il n'y a pas de telle piste, aucune fausse conversion/qualité n'est inventée.
+5. Diagnostic sans URL, cookies ou identifiants : mode vidéo, nombre de reprises
+   0/1 ou 1/1, première erreur codec conservée et version d'application.
+   Journal KZVodCodec : mode vidéo et sélection éventuelle, sans lien de lecture.
+
+PRÉSERVÉ
+--------
+Chaînes et mini-lecteurs live, replay actuel et protections 429, audio natif et
+extension FFmpeg, buffers, API fournisseurs, recherche approuvée, catégories,
+favoris, récents, historique par liste, épisodes suivants, trois thèmes,
+personnalisation, licences, workflows et sécurité de mise à jour.
+Aucun changement Apps Script ni Cloudflare. Pas de VLC Android.
+
+INSTALLATION WINDOWS — PAS BESOIN DE PYTHON
+-------------------------------------------
+1. Extraire ce ZIP COMPLET dans la racine du dépôt KZPLAYER contenant app,
+   tools et .github, puis remplacer les fichiers. Ne pas créer un sous-dossier
+   contenant une deuxième copie du dépôt.
+2. Si la source du dépôt est déjà la 3.7.6 nettoyée, aucun nouveau fichier obsolète
+   n'a été ajouté à retirer. Pour appliquer le nettoyage fixe également depuis
+   une ancienne génération, exécuter dans PowerShell à la racine :
+
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release\cleanup_legacy_players.ps1
+
+   Ce script local fourni retire uniquement la même liste fixe de 25 anciens
+   fichiers que le nettoyage Python. Il est idempotent et refuse les liens ou
+   jonctions sous le dépôt. Il ne supprime ni données utilisateur ni lecteurs
+   actuels. Ne pas lancer un ancien script Python dont le contrôle de version
+   attend 3.7.6 : utiliser les fichiers de CE ZIP.
+3. Puis exactement ces trois commandes Git :
+
+   git add -A app tools/release/remove_libvlc_v135.py tools/release/cleanup_legacy_players.ps1 A-LIRE-3.7.7-V143.txt
+   git commit -m "Cible le decodeur HEVC Allwinner et borne la reprise VOD - 3.7.7"
+   git push
+
+4. Attendre la réussite COMPLÈTE du workflow officiel, puis installer son APK
+   en MISE À JOUR, sans désinstaller ni effacer les données. Les APK personnalisés
+   conservent leur package/circuit propres. Aucun push ou build réalisé ici.
+5. Vérifier la version installée 3.7.7 (ne pas confondre avec l'ancien APK 3.4.0).
+   Avec un seul appareil USB autorisé et PowerShell dans platform-tools :
+
+   .\adb.exe -d shell dumpsys package com.kzplayer.app | Select-String "versionName=|versionCode="
+
+6. Fermer complètement TiviMate. Démarrer la capture avant KZ, puis lancer le
+   MÊME film/liste/qualité que les essais précédents :
+
+   .\adb.exe -d logcat -b main -b system -b crash -v threadtime -T 1 > ".\KZ-3.7.7-lecture.txt"
+
+   Après lecture image/son pendant 30 secondes, ou cinq secondes après l'erreur,
+   Ctrl+C termine ET conserve le fichier. Ne pas relancer cette même commande
+   avant envoi car elle écraserait le fichier. Envoyer le journal, résultat
+   image/son/mouvement et photo du diagnostic si erreur. Pas besoin de refaire
+   la capture TiviMate pour ce premier essai ciblé.
+
+VÉRIFICATIONS ET LIMITES
+-----------------------
+- 116 méthodes de tests JVM locales, dont 29 nouveaux cas de sélection/garde-fou
+  et budget de récupération ; 37 contrôles de recherche Java.
+- 32 vérifications du routeur réel contre des interfaces Android/Media3 minimales :
+  HEVC Allwinner asynchrone >=23, audio/autres décodeurs/API21/DRM inchangés,
+  même objet Configuration transmis au décodeur sans modification.
+- 137 XML analysés ; code replay, live previews, HTTP/audio/buffers et fichiers
+  API/recherche/catégories/historique comparés à la 3.7.6.
+- Superposition/nettoyage Python sur anciennes sources, ZIP/CRC et périmètre audités.
+- Script PowerShell vérifié structurellement et même liste de chemins que Python,
+  mais non exécuté ici faute de PowerShell dans l'environnement.
+Ces vérifications ne constituent PAS une compilation Android/Kotlin complète,
+une signature d'APK, une installation ni une validation native sur X96Q.
+Le changement asynchrone/récupération est ciblé par les traces, pas prouvé
+comme solution définitive. Il reste à vérifier image, son, couleurs et fluidité.
+Les guides V112/V117/V141/V142 inclus sont historiques ; suivre CE guide.
