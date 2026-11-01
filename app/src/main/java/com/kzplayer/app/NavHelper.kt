@@ -42,7 +42,9 @@ object NavHelper {
             act.startActivity(Intent(act, ReplayHubActivity::class.java))
         }
         wire(act, R.id.navSearch, R.id.navSearchImg, false) {
-            act.findViewById<EditText?>(R.id.searchEt)?.requestFocus()
+            val field=act.findViewById<EditText?>(R.id.searchEt)
+            if(field!=null) field.requestFocus()
+            else if(active=="tv" || active=="guide") LiveSearch.open(act)
         }
         wire(act, R.id.navMic, R.id.navMicImg, false) {
             act.startActivity(Intent(act, VoiceActivity::class.java))

@@ -9,6 +9,23 @@
         android:layout_height="match_parent"
         android:clipToPadding="false"
         android:paddingBottom="24dp" />
+    <TextView
+        android:id="@+id/liveSearchBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:minHeight="48dp"
+        android:gravity="center"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:background="@drawable/bg_nflx_ghost"
+        android:text="Rechercher une chaîne"
+        android:textColor="@color/text"
+        android:textSize="13sp"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true" />
     <ProgressBar
         android:id="@+id/progress"
         android:layout_width="wrap_content"

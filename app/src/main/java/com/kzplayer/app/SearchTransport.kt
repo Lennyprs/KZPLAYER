@@ -86,7 +86,7 @@ internal object SearchTransport {
         throw IOException("REPONSE_INVALIDE")
     }
     private fun enc(s:String) = URLEncoder.encode(s,"UTF-8")
-    private val fields = setOf("name","title","stream_id","series_id","container_extension","stream_icon","cover","added","last_modified")
+    private val fields = setOf("name","title","stream_id","series_id","container_extension","stream_icon","cover","added","last_modified","tv_archive","catchup")
     private fun objectFrom(reader: JsonReader): JSONObject {
         val o=JSONObject();reader.beginObject()
         while(reader.hasNext()) {
@@ -101,7 +101,7 @@ internal object SearchTransport {
         reader.endObject();return o
     }
     suspend fun xtream(pl:Playlist,kind:String,onBatch:(List<Item>)->Unit) {
-        val action=if(kind=="series") "get_series" else "get_vod_streams"
+        val action=LiveSearchPolicy.action(kind)
         val base=pl.serverUrl.trimEnd('/')
         val url="$base/player_api.php?username=${enc(pl.username)}&password=${enc(pl.password)}&action=$action"
         read(url) { input ->
@@ -113,8 +113,11 @@ internal object SearchTransport {
                 val name=o.optString("name").ifBlank {o.optString("title")}
                 val id=o.optString(if(kind=="series") "series_id" else "stream_id")
                 if(name.isBlank() || id.isBlank()) continue
-                val ext=o.optString("container_extension").ifBlank {"mp4"}
+                val ext=o.optString("container_extension").ifBlank {if(kind=="live") "ts" else "mp4"}
                 batch.add(if(kind=="series") Item(name=name,kind=kind,logo=o.optString("cover"),seriesId=id,added=o.optString("last_modified").toLongOrNull()?:0L)
+                    else if(kind=="live") Item(name=name,kind="live",logo=o.optString("stream_icon"),streamId=id,containerExt=ext,
+                        directUrl="$base/live/${enc(pl.username)}/${enc(pl.password)}/$id.$ext",
+                        catchup=o.optString("tv_archive") in listOf("1","true") || o.optString("catchup") in listOf("1","true"))
                     else Item(name=name,kind="movie",logo=o.optString("stream_icon"),streamId=id,containerExt=ext,directUrl="$base/movie/${enc(pl.username)}/${enc(pl.password)}/$id.$ext",added=o.optString("added").toLongOrNull()?:0L))
                 if(batch.size>=256) {onBatch(batch);batch=ArrayList(256)}
             }
@@ -137,7 +140,7 @@ internal object SearchTransport {
                     var batch=ArrayList<Item>(256)
                     SearchM3u.read(input) {entry ->
                         if(entry.userAgent.isNotBlank()) Api.m3uUserAgents[entry.url]=entry.userAgent
-                        if(entry.kind!="live") {
+                        run { // Index live, movie and series in a single shared M3U transfer.
                             batch.add(Item(name=entry.name,logo=entry.logo,kind=entry.kind,
                                 directUrl=if(entry.kind=="series") null else entry.url,
                                 seriesId=if(entry.kind=="series") entry.name else null,
@@ -161,16 +164,17 @@ internal object SearchTransport {
         suspend fun search(kind:String,query:String,onBatch:(List<Item>)->Unit):Boolean {
             mutex.lock()
             try {
-                val type=if(kind=="series") "series" else "vod"
+                val type=LiveSearchPolicy.portalType(kind)
+                val categoryParam=LiveSearchPolicy.portalCategory(kind)
                 var page=1;var pages=1;var received=0;var category="*"
                 val seen=HashSet<String>()
                 while(page<=pages && page<=40 && received<=SearchCatalogStore.PER_LIST_LIMIT) {
-                    val q="type=$type&action=get_ordered_list&category=${enc(category)}&search=${enc(query)}&fav=0&sortby=number&p=$page&JsHttpRequest=1-xml"
+                    val q="type=$type&action=get_ordered_list&$categoryParam=${enc(category)}&search=${enc(query)}&fav=0&sortby=number&p=$page&JsHttpRequest=1-xml"
                     var js=JSONObject(Api.searchLegacyPortal(playlist,q)).optJSONObject("js")?:throw IOException("REPONSE_PORTAIL")
                     if(js.optString("error").trim().lowercase() !in listOf("","0","false","null"))throw IOException("REFUS_PORTAIL")
                     var data=js.optJSONArray("data")?:throw IOException("REPONSE_PORTAIL")
                     if(page==1&&data.length()==0)for(alias in listOf("0","")){
-                        val retry=JSONObject(Api.searchLegacyPortal(playlist,q.replace("&category=${enc(category)}&","&category=${enc(alias)}&"))).optJSONObject("js")?:continue
+                        val retry=JSONObject(Api.searchLegacyPortal(playlist,q.replace("&$categoryParam=${enc(category)}&","&$categoryParam=${enc(alias)}&"))).optJSONObject("js")?:continue
                         val rows=retry.optJSONArray("data")?:continue
                         if(rows.length()>0){js=retry;data=rows;category=alias;break}
                     }
@@ -180,10 +184,11 @@ internal object SearchTransport {
                     for(i in 0 until data.length()){
                         val o=data.optJSONObject(i)?:continue;val id=o.optString("id");val cmd=o.optString("cmd");val name=o.optString("name").ifBlank {o.optString("title")}
                         if(name.isBlank()||!seen.add(id+"|"+cmd+"|"+name))continue
-                        val series=kind=="series"||o.optInt("is_series",0)==1
+                        val live=kind=="live"
+                        val series=!live && (kind=="series"||o.optInt("is_series",0)==1)
                         var logo=o.optString("logo").ifBlank {o.optString("screenshot_uri")}.ifBlank {o.optString("cover")}
                         if(logo.isNotBlank()&&!logo.startsWith("http",true))logo=try{java.net.URI(playlist.serverUrl.trimEnd('/')+"/").resolve(logo).toString()}catch(_:Exception){""}
-                        batch.add(Item(name=name,kind=if(series)"series" else "movie",logo=logo,cmd=cmd,streamId=if(!series)id.takeIf {it.isNotBlank()}else null,seriesId=if(series)id else null,description=o.optString("description"),added=o.optString("added").toLongOrNull()?:0L))
+                        batch.add(Item(name=name,kind=if(live)"live" else if(series)"series" else "movie",logo=logo,cmd=cmd,streamId=if(!series)id.takeIf {it.isNotBlank()}else null,seriesId=if(series)id else null,catchup=o.optString("tv_archive") in listOf("1","true"),description=o.optString("description"),added=o.optString("added").toLongOrNull()?:0L))
                     }
                     if(batch.isEmpty()&&page>1)return true
                     if(batch.isNotEmpty())onBatch(batch)

@@ -39,14 +39,17 @@ object FastSearch {
     private fun hash(s:String)=MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8)).joinToString("") {"%02x".format(it)}
     internal fun key(pl:Playlist,kind:String):String = hash(pl.copy(nom="",hiddenCategories=emptyList(),shownByKind=emptyMap()).toString())+":"+kind
     private fun fresh(key:String)=System.currentTimeMillis()-store.updated(key) in 0 until TTL
-    private fun row(item:Item):SearchCatalogStore.Row {
+    private fun identity(item:Item):String {
         val stable=listOf(item.streamId,item.seriesId,item.cmd,item.directUrl).firstOrNull { !it.isNullOrBlank() }?:item.name
-        val identity=hash(item.kind+":"+stable)
+        return hash(item.kind+":"+stable)
+    }
+    private fun row(item:Item):SearchCatalogStore.Row {
+        val identity=identity(item)
         val o=JSONObject().put("name",item.name).put("logo",item.logo).put("kind",item.kind)
             .put("direct",item.directUrl?:JSONObject.NULL).put("stream",item.streamId?:JSONObject.NULL)
             .put("ext",item.containerExt?:JSONObject.NULL).put("series",item.seriesId?:JSONObject.NULL)
             .put("cmd",item.cmd?:JSONObject.NULL).put("description",item.description).put("duration",item.duration)
-            .put("added",item.added).put("summary",item.summary)
+            .put("added",item.added).put("summary",item.summary).put("catchup",item.catchup)
         item.directUrl?.let {url -> Api.m3uUserAgents[url]?.let {o.put("ua",it)}}
         return SearchCatalogStore.Row(identity,item.name,o.toString())
     }
@@ -57,11 +60,11 @@ object FastSearch {
         if(direct!=null && o.optString("ua").isNotBlank()) Api.m3uUserAgents[direct]=o.optString("ua")
         return Item(name=o.optString("name"),logo=o.optString("logo"),kind=o.optString("kind"),directUrl=direct,
             streamId=optional("stream"),containerExt=optional("ext"),seriesId=optional("series"),cmd=optional("cmd"),
-            description=o.optString("description"),duration=o.optString("duration"),added=o.optLong("added"),summary=o.optString("summary"))
+            description=o.optString("description"),duration=o.optString("duration"),added=o.optLong("added"),summary=o.optString("summary"),catchup=o.optBoolean("catchup"))
     }
     private fun catalog(pl:Playlist,kind:String):Ticket {
         val requested=key(pl,kind)
-        val jobKey=if(pl.type=="m3u") key(pl,"m3u-both") else requested
+        val jobKey=if(pl.type=="m3u") key(pl,"m3u-all-v144") else requested
         synchronized(lock) {
             val previous=work[jobKey]
             if(previous!=null && (previous.outcome==0 || (previous.outcome==2 && System.currentTimeMillis()-previous.ended<3000))) return previous
@@ -74,14 +77,16 @@ object FastSearch {
                         run { // Download has its own deadline; indexing must not be timed as a network request.
                             val stamp=java.util.UUID.randomUUID().toString()
                             if(pl.type=="m3u") {
-                                val movieKey=key(pl,"movie");val seriesKey=key(pl,"series")
+                                val movieKey=key(pl,"movie");val seriesKey=key(pl,"series");val liveKey=key(pl,"live")
                                 SearchTransport.m3u(pl) {batch ->
+                                    val live=batch.filter {it.kind=="live"}.map(::row)
+                                    if(live.isNotEmpty()) save(version) {store.put(liveKey,stamp,live)}
                                     val movies=batch.filter {it.kind=="movie"}.map(::row)
                                     val series=batch.filter {it.kind=="series"}.map(::row)
                                     if(movies.isNotEmpty()) save(version) {store.put(movieKey,stamp,movies)}
                                     if(series.isNotEmpty()) save(version) {store.put(seriesKey,stamp,series)}
                                 }
-                                save(version) {store.complete(movieKey,stamp);store.complete(seriesKey,stamp)}
+                                save(version) {store.complete(movieKey,stamp);store.complete(seriesKey,stamp);store.complete(liveKey,stamp)}
                             } else {
                                 SearchTransport.xtream(pl,kind) {batch ->save(version) {store.put(requested,stamp,batch.map(::row))}}
                                 save(version) {store.complete(requested,stamp)}
@@ -97,7 +102,7 @@ object FastSearch {
         }
     }
     suspend fun prefetch(playlists:List<Playlist>,kind:String) = withContext(Dispatchers.IO) {
-        if(kind!="movie" && kind!="series") return@withContext
+        if(!LiveSearchPolicy.searchKind(kind)) return@withContext
         playlists.distinctBy {it.id}.sortedByDescending {it.id==Session.current?.id}
             .filter {it.type!="stalker"}.forEach {pl ->
                 try {catalog(pl,kind)} catch(e:CancellationException) {throw e} catch(_:Exception) {}
@@ -113,7 +118,7 @@ object FastSearch {
             for(raw in rows.take(SearchCatalogStore.PER_LIST_LIMIT)) {
                 val item=try {item(raw)}catch(_:Exception){continue}
                 if(item.kind!=kind) continue
-                groups.getOrPut(item.kind+":"+SearchText.fold(item.name)) {ArrayList()}.add(SearchHit(item,pl))
+                groups.getOrPut(LiveSearchPolicy.groupKey(item.kind,pl.id,if(kind=="live") identity(item) else "",SearchText.fold(item.name))) {ArrayList()}.add(SearchHit(item,pl))
             }
         }
         val current=Session.current?.id

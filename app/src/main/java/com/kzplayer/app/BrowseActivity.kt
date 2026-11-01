@@ -75,12 +75,14 @@ class BrowseActivity : BaseActivity() {
     private var didWhitelistRefresh = false
     private var didWarmSearch = false
     private var ignoreSearchChange = false
+    private var liveSearchOnly = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_browse)
         kind = intent.getStringExtra("kind") ?: "live"
-        findViewById<TextView>(R.id.titleTv).text = Session.browseTitle
+        liveSearchOnly = kind == "live" && intent.getBooleanExtra("liveGlobalSearch", false)
+        findViewById<TextView>(R.id.titleTv).text = if(liveSearchOnly) "Rechercher des chaînes" else Session.browseTitle
 
         catRv = findViewById(R.id.catRv)
         itemRv = findViewById(R.id.itemRv)
@@ -106,7 +108,7 @@ class BrowseActivity : BaseActivity() {
         }
 
         val catBtn = findViewById<TextView>(R.id.catBtn)
-        catBtn.visibility = if (kind == "favorites") View.GONE else View.VISIBLE
+        catBtn.visibility = if (kind == "favorites" || liveSearchOnly) View.GONE else View.VISIBLE
         catBtn.setOnClickListener { showManageCategoriesDialog() }
         // v391 : curseur bien visible sur les boutons Tri / Vue / Categories.
         FocusFx.apply(sortBtn, viewBtn, catBtn)
@@ -131,15 +133,16 @@ class BrowseActivity : BaseActivity() {
             override fun afterTextChanged(s: Editable?) {
                 if (ignoreSearchChange) return
                 val q = searchEt.text.toString().trim()
-                // Films/Series : la recherche classique cherche sur TOUS les serveurs.
-                if ((kind == "movie" || kind == "series") && q.length >= 2) {
+                // Chaînes/Films/Series : recherche sur toutes les listes, sans changer les lecteurs.
+                if (LiveSearchPolicy.searchKind(kind) && q.length >= 2) {
                     runMultiServerSearch(q)
                 } else {
                     multiMode = false
                     searchJob?.cancel()
                     searchEpoch++
                     setLoading(false)
-                    if (kind != "movie" && kind != "series") ensureAllLoadedForSearch()
+                    if (!LiveSearchPolicy.searchKind(kind)) ensureAllLoadedForSearch()
+                    if(liveSearchOnly) { filtered=emptyList(); itemAdapter?.submit(filtered); msgTv.text="Saisis au moins 2 caractères."; return }
                     applyFilter()
                 }
             }
@@ -148,6 +151,8 @@ class BrowseActivity : BaseActivity() {
         })
 
         loadCategories()
+        if(liveSearchOnly) searchEt.requestFocus()
+        if(kind=="live") searchEt.hint="Rechercher dans toutes les listes"
 
         // Commande vocale : "voicePlay" = lancer directement une chaine (traite apres le
         // chargement des categories, cf. maybeStartVoicePlay) ; "voiceQuery" = pre-remplir la recherche.
@@ -188,6 +193,13 @@ class BrowseActivity : BaseActivity() {
                 if (Session.current != null) loadCategories()
                 else { setLoading(false); msgTv.text = "Serveurs indisponibles. Reviens a l'accueil puis reessaie." }
             }
+            return
+        }
+        if(liveSearchOnly) {
+            catRv.visibility=View.GONE
+            setLoading(false)
+            if(!multiMode) msgTv.text="Saisis au moins 2 caractères."
+            maybeWarmSearch()
             return
         }
         val pl = existing
@@ -585,7 +597,7 @@ class BrowseActivity : BaseActivity() {
             toggleServer(cat.id.substring(7))
             return
         }
-        if ((kind == "movie" || kind == "series") && multiMode) {
+        if (LiveSearchPolicy.searchKind(kind) && multiMode) {
             multiMode = false
             searchEpoch++
             searchJob?.cancel()
@@ -808,7 +820,7 @@ class BrowseActivity : BaseActivity() {
     // ouverture d'ecran) pour accelerer la recherche multi-serveurs Films/Series.
     private fun maybeWarmSearch() {
         if (didWarmSearch) return
-        if (kind != "movie" && kind != "series") return
+        if (!LiveSearchPolicy.searchKind(kind)) return
         val pls = Session.playlists
         if (pls.isEmpty()) return
         didWarmSearch = true
@@ -867,7 +879,9 @@ class BrowseActivity : BaseActivity() {
     private fun openItem(item: Item) {
         // Resultat multi-serveurs : on bascule d'abord sur le serveur ou l'item se trouve.
         if (item.ownerPlaylistId.isNotBlank() && item.ownerPlaylistId != Session.current?.id) {
-            Session.playlists.firstOrNull { it.id == item.ownerPlaylistId }?.let { Session.current = it }
+            val owner=Session.playlists.firstOrNull { it.id == item.ownerPlaylistId }
+            if(owner==null) { msgTv.text="Cette liste n’est plus disponible. Relance la recherche."; return }
+            Session.current = owner
         }
         // v340 : en mode REPLAY, un clic sur une chaine ouvre la liste des programmes
         // deja diffuses (archive) au lieu de lancer le direct.
@@ -927,7 +941,9 @@ class BrowseActivity : BaseActivity() {
     }
 
     private fun previewLive(url: String, title: String, logo: String = "", streamId: String = "", item: Item? = null) {
-        val chans = filtered.filter { it.kind == "live" || it.kind == "channel" }
+        // Search results can belong to several owners: keep this preview/zap queue in its selected list.
+        val chans = filtered.filter { (it.kind == "live" || it.kind == "channel") &&
+            (!multiMode || it.ownerPlaylistId == item?.ownerPlaylistId) }
         Session.liveChannels = chans
         // v353 : on retient la categorie affichee et la position exacte de la chaine.
         ZapList.set(chans, item)
@@ -1118,7 +1134,7 @@ class BrowseActivity : BaseActivity() {
             }
             if (holder is ListVH) {
                 holder.name.text = item.name
-                holder.sub.text = "OK : aper\u00e7u + EPG"
+                holder.sub.text = item.serverLabel.ifBlank { "OK : aper\u00e7u + EPG" }
                 holder.logo.load(item.logo) {
                     crossfade(false)
                     placeholder(R.drawable.bg_tile)

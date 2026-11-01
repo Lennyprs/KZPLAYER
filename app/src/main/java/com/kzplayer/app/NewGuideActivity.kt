@@ -79,6 +79,7 @@ open class NewGuideActivity : NtBase() {
         dateTv = findViewById(R.id.dateTv)
         sourceTv = findViewById(R.id.sourceTv)
         findViewById<TextView?>(R.id.optionsBtn)?.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        findViewById<TextView>(R.id.liveSearchBtn).setOnClickListener { LiveSearch.open(this) }
         heroImg = findViewById(R.id.heroImg)
         heroTitle = findViewById(R.id.heroTitle)
         heroTime = findViewById(R.id.heroTime)

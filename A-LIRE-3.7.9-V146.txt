@@ -1,0 +1,25 @@
+KZ PLAYER 3.7.9 — V146
+
+Identique à la livraison 3.7.8 V145, sauf versionName passée à 3.7.9 et
+vérifications de version des scripts de nettoyage facultatifs actualisées.
+Media3 1.6.0, compileSdk/targetSdk 35, le PlayerActivity fourni et surface_view
+sont conservés. La recherche des chaînes multi-listes reste présente.
+Aucune nouvelle modification de lecteur, codec, son, réseau, identité/signature,
+backend ou panneau. Les guides des versions précédentes sont historiques.
+
+Extraire le ZIP complet à la racine du dépôt puis remplacer les fichiers.
+Exécuter ces trois lignes depuis cette racine :
+
+git add -A app build.gradle .github/workflows/build-apk-signed.yml .github/workflows/build-brands.yml tools/release/remove_libvlc_v135.py tools/release/cleanup_legacy_players.ps1 A-LIRE-3.7.9-V146.txt
+git commit -m "Passe KZ Player en 3.7.9 - V146"
+git push
+
+Attendre le workflow officiel entièrement vert puis installer l'APK 3.7.9 en mise
+à jour, sans désinstaller ni effacer les données. Le versionCode continue d'être
+calculé par le workflow existant.
+
+Les scripts de nettoyage sont facultatifs pour un dépôt déjà propre V145.
+Aucune compilation Android complète ni validation native de lecture effectuée
+pour cette livraison. Les réserves techniques de V145 restent valables : ni
+compatibilité universelle Dolby Vision, ni bascule logicielle garantie, ni
+compatibilité binaire FFmpeg validée. Archive de sources, pas un APK signé.

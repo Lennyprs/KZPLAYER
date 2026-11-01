@@ -45,6 +45,10 @@ abstract class NflxCatalogActivity : NtBase() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_nflx_catalog)
+        findViewById<TextView>(R.id.liveSearchBtn).apply {
+            visibility=if(kind=="live") View.VISIBLE else View.GONE
+            setOnClickListener { LiveSearch.open(this@NflxCatalogActivity) }
+        }
         rowsRv = findViewById(R.id.rowsRv)
         progress = findViewById(R.id.progress)
         msgTv = findViewById(R.id.msgTv)

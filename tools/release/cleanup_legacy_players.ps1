@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $gradle = Join-Path $root 'app/build.gradle'
-if (!(Test-Path -LiteralPath $gradle) -or !(Select-String -LiteralPath $gradle -SimpleMatch 'versionName "3.7.7"' -Quiet)) { throw 'Extraire les sources 3.7.7 avant le nettoyage.' }
+if (!(Test-Path -LiteralPath $gradle) -or !(Select-String -LiteralPath $gradle -SimpleMatch 'versionName "3.7.9"' -Quiet)) { throw 'Extraire les sources 3.7.9 avant le nettoyage.' }
 $files = @(
     'app/src/main/assets/libvlc-LGPL-2.1.txt'
     'app/src/main/assets/libvlc-NOTICE.txt'
