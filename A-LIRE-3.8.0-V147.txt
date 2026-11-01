@@ -1,0 +1,37 @@
+KZ PLAYER 3.8.0 — V147
+
+CHANGEMENTS DEMANDES
+- versionName 3.8.0 ; calcul du versionCode existant conserve.
+- PlayerActivity.kt remplace octet pour octet par le nouveau fichier joint.
+- Gardes de version des scripts de nettoyage facultatifs actualisees a 3.8.0.
+- Media3 1.6.0, compileSdk/targetSdk 35, minSdk 21 et surface_view conserves.
+- Recherche de chaines multi-listes, categories, historique, licences, identites
+  de packages, signatures, backend et panneaux inchanges dans les sources.
+
+Le nouveau lecteur exclut les decodeurs dont le nom contient Allwinner lorsque
+le type demande est video/hevc (H265), au lieu de les placer en dernier.
+Cela concerne aussi le direct de ce lecteur. Si aucun autre decodeur utilisable
+n'existe, la lecture peut echouer ; le logiciel peut etre trop lent pour la 4K.
+Aucune garantie de compatibilite HDR/Dolby Vision ou de lecture universelle.
+Le code replay separe est conserve ; pas d'autre changement de lecteur ajoute.
+
+INSTALLATION
+Extraire tout le ZIP a la racine du depot et remplacer les fichiers.
+Depuis cette racine, executer :
+
+git add -A app build.gradle .github/workflows/build-apk-signed.yml .github/workflows/build-brands.yml tools/release/remove_libvlc_v135.py tools/release/cleanup_legacy_players.ps1 A-LIRE-3.8.0-V147.txt
+git commit -m "Passe en 3.8.0 avec le nouveau PlayerActivity fourni - V147"
+git push
+
+Attendre la compilation officielle entierement verte puis installer son APK
+3.8.0 en mise a jour, sans desinstaller ni effacer les donnees.
+Si un push est refuse, ne pas forcer : verifier git status avant de synchroniser.
+Ne pas restaurer l'ancien stash de documentation pour cette mise a jour.
+
+CONTROLES
+Lecteur livre identique au fichier joint (SHA-256), seuls les fichiers annonces
+changes par rapport a V146 ; XML analyses ; contenu et CRC du ZIP verifies.
+Archive complete de sources, pas un APK compile ou signe.
+Pas de compilation Android/Kotlin complete, de resolution Gradle ou de test
+natif sur X96Q realise ici. La compatibilite binaire FFmpeg avec Media3 1.6.0
+reste a valider comme pour la livraison precedente.

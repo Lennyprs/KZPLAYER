@@ -27,7 +27,6 @@ import kotlinx.coroutines.launch
 class PlayerActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private var playbackOwnerId=""
-    // On garde la variable pour éviter les erreurs de compilation, mais on ne l'utilise plus
     private var vodCodecFactory:VodAsyncRenderersFactory?=null
     private val vodCodecRecovery=VodPlaybackPolicy.RecoveryBudget()
     private var compatibleVideoSelected=false
@@ -346,9 +345,7 @@ class PlayerActivity : AppCompatActivity() {
         val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(sourceFactory)
             .setLoadErrorHandlingPolicy(errPolicy)
 
-        // ---- CORRECTION STYLE TIVIMATE ----
-        // On utilise le RenderersFactory standard d'Android.
-        // On active le fallback : si le décodeur matériel Allwinner plante, ExoPlayer bascule sur le logiciel.
+        // ---- SOLUTION FINALE : INTERDIRE LE DÉCODEUR ALLWINNER ----
         vodCodecFactory = null 
         val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
             .setEnableDecoderFallback(true)
@@ -356,15 +353,17 @@ class PlayerActivity : AppCompatActivity() {
                 androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             )
             .setMediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
-                val decoders = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+                val infos = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
                     .getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
                 
-                // On met le décodeur Allwinner tout en bas de la liste pour l'éviter
-                decoders.sortedBy { 
-                    if (it.name.contains("allwinner", ignoreCase = true)) 1 else 0 
+                // On bannit le décodeur Allwinner pour le H265 (HDR/DV)
+                if (mimeType == androidx.media3.common.MimeTypes.VIDEO_H265) {
+                    infos.filter { !it.name.contains("allwinner", ignoreCase = true) }
+                } else {
+                    infos
                 }
             }
-        // -----------------------------------
+        // -----------------------------------------------------------
 
         if (isReplayMode && intent.getBooleanExtra("replaySoftwareRetry", false)) {
             renderersFactory.setMediaCodecSelector { mime, secure, tunneled ->

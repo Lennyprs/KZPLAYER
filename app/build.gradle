@@ -13,8 +13,12 @@ android {
         minSdk 21
         targetSdk 35
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
-        // VERSION_CODE fourni par le workflow, sinon run_number + 400.
+        // v392 : decalage +400 pour rester au-dessus des anciens builds Kozukaa
+        // (qui allaient jusqu a 391-392). Sinon l auto-update dans l app dit "deja
+        // a jour" parce que GITHUB_RUN_NUMBER repart a 1 sur le nouveau depot Lennyprs.
+        // - Si VERSION_CODE est fourni par le workflow, on le prend tel quel (deja
+        //   calcule = run_number + 400). Cela evite un double decalage.
+        // - Sinon (fallback local), on part de GITHUB_RUN_NUMBER et on ajoute +400.
         def vcEnv = System.getenv("VERSION_CODE")
         def vcCode
         if (vcEnv != null && vcEnv.isInteger()) {
@@ -24,21 +28,19 @@ android {
             def runNum = runRaw.isInteger() ? runRaw.toInteger() : 1
             vcCode = runNum + 400
         }
-
         versionCode vcCode
-        versionName "3.7.9"
+        versionName "3.8.0"
     }
 
-    buildFeatures {
-        buildConfig true
-    }
-
+    buildFeatures { buildConfig true }
     buildTypes {
         debug {
             minifyEnabled false
             shrinkResources false
         }
         release {
+            // Protection gratuite : R8/ProGuard obfusque le code et réduit les ressources.
+            // Important : build en release signé, pas en debug, pour profiter de cette protection.
             minifyEnabled true
             shrinkResources true
             debuggable false
@@ -46,6 +48,7 @@ android {
         }
     }
 
+    // Securite build CI : certaines regles lint font echouer le build release.
     lint {
         checkReleaseBuilds false
         abortOnError false
@@ -56,7 +59,6 @@ android {
         targetCompatibility JavaVersion.VERSION_17
         coreLibraryDesugaringEnabled true
     }
-
     kotlinOptions {
         jvmTarget = '17'
     }
@@ -66,7 +68,6 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test:runner:1.5.2'
-
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'com.google.android.material:material:1.12.0'
@@ -75,17 +76,15 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.3'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-
-    // Media3 1.6.0 : sans garantie de compatibilite Dolby universelle.
+    // Media3 1.6.0 : mise a jour demandee, sans garantie de compatibilite Dolby universelle.
     implementation 'androidx.media3:media3-exoplayer:1.6.0'
     implementation 'androidx.media3:media3-exoplayer-hls:1.6.0'
     implementation 'androidx.media3:media3-exoplayer-dash:1.6.0'
     implementation 'androidx.media3:media3-ui:1.6.0'
+    // v149 : DataSource base sur OkHttp pour appliquer le DNS-over-HTTPS aux flux video.
     implementation 'androidx.media3:media3-datasource-okhttp:1.6.0'
-
-    // Decodeur audio FFmpeg conserve.
+    // Décodeur audio FFmpeg pour ExoPlayer/Media3 : aide sur AC3/EAC3/DTS et vieux codecs audio.
     implementation 'org.jellyfin.media3:media3-ffmpeg-decoder:1.3.1+2'
-
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
     implementation 'io.coil-kt:coil:2.4.0'
 }
