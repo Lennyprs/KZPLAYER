@@ -1,4 +1,4 @@
-package com.kzplayer.app
+﻿package com.kzplayer.app
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -41,6 +41,8 @@ class LivePreviewActivity : BaseActivity() {
     private var streamId: String = ""
     private var channels: List<Item> = emptyList()
     private val epgData = HashMap<String, List<EpgEntry>>()
+    // Anti-doublon EPG : une seule coroutine de fetch par streamId a la fois.
+    private val epgFetching = java.util.Collections.synchronizedSet(HashSet<String>())
 
     // Plein ecran auto apres 5 s d'inactivite.
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -337,10 +339,17 @@ class LivePreviewActivity : BaseActivity() {
                 fill(holder.progRow, cached)
             } else {
                 holder.progRow.addView(makeCell("", "Chargement...", false))
-                lifecycleScope.launch {
-                    val rows = fetchEpg(pl, sid)
-                    epgData[sid] = rows
-                    if (holder.bindingAdapterPosition == position) fill(holder.progRow, rows)
+                // Anti-doublon : une seule coroutine de fetch par streamId a la fois.
+                if (epgFetching.add(sid)) {
+                    lifecycleScope.launch {
+                        try {
+                            val rows = fetchEpg(pl, sid)
+                            epgData[sid] = rows
+                            if (holder.bindingAdapterPosition == position) fill(holder.progRow, rows)
+                        } finally {
+                            epgFetching.remove(sid)
+                        }
+                    }
                 }
             }
         }

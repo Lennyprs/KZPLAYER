@@ -1,4 +1,4 @@
-package com.kzplayer.app
+﻿package com.kzplayer.app
 
 import android.content.Intent
 import android.net.Uri
@@ -215,6 +215,7 @@ open class NewGuideActivity : NtBase() {
             } catch (e: Exception) { setLoading(false); msgTv.text = "Erreur : ${e.message}" }
         }
     }
+
 
     private fun bindChannels() {
         if (chAdapter == null) { chAdapter = ChannelAdapter(); channelRv.adapter = chAdapter }
@@ -460,6 +461,8 @@ open class NewGuideActivity : NtBase() {
 
     inner class ChannelAdapter : RecyclerView.Adapter<ChannelAdapter.VH>() {
         private val data = ArrayList<Item>()
+        // Anti-doublon EPG : une seule coroutine de fetch par cle (playlist:streamId) a la fois.
+        private val epgFetching = java.util.Collections.synchronizedSet(HashSet<String>())
         // v392 : pour la pagination Stalker (batches successifs) on ajoute les nouvelles
         // lignes SANS reset : on ne perd plus le focus quand on descend dans les chaines
         // pendant que la categorie continue de se charger.
@@ -479,7 +482,7 @@ open class NewGuideActivity : NtBase() {
                 }
             } else {
                 data.clear(); data.addAll(list); notifyDataSetChanged()
-            }
+                data.clear(); data.addAll(list); epgFetching.clear(); notifyDataSetChanged()
         }
         inner class VH(val v: View) : RecyclerView.ViewHolder(v) {
             val logo: ImageView = v.findViewById(R.id.logoIv)
@@ -520,13 +523,24 @@ open class NewGuideActivity : NtBase() {
             holder.v.isFocusable = true
             holder.v.isFocusableInTouchMode = false
             val pl = Session.playlists.firstOrNull {it.id==item.ownerPlaylistId} ?: Session.current ?: return
+            // EPG : on ne lance qu'une seule coroutine par cle pour eviter les requetes
+            // reseau paralleles identiques lors du bind de toutes les cellules visibles.
+            // Le cache Api (60 min) court-circuite de toute facon les fetches suivants.
+            val epgKey = (pl.id) + ":" + (item.streamId ?: item.name)
             val key = holder.boundStream
-            lifecycleScope.launch {
-                val epg = epgFor(pl, item)
-                if (holder.boundStream != key) return@launch
-                holder.nowBadge.visibility = if (epg.any { it.nowPlaying }) View.VISIBLE else View.GONE
-                renderProg(holder.progRow, epg)
-                if (holder.v.hasFocus() || position == 0) updateHero(item, epg)
+            if (epgFetching.add(epgKey)) {
+                lifecycleScope.launch {
+                    try {
+                        val epg = epgFor(pl, item)
+                        if (holder.boundStream == key) {
+                            holder.nowBadge.visibility = if (epg.any { it.nowPlaying }) View.VISIBLE else View.GONE
+                            renderProg(holder.progRow, epg)
+                            if (holder.v.hasFocus() || position == 0) updateHero(item, epg)
+                        }
+                    } finally {
+                        epgFetching.remove(epgKey)
+                    }
+                }
             }
         }
         private fun renderProg(row: LinearLayout, epg: List<EpgEntry>) {

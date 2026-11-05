@@ -1,4 +1,4 @@
-package com.kzplayer.app
+﻿package com.kzplayer.app
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -954,7 +954,9 @@ object Api {
 
     suspend fun xtreamShortEpg(pl: Playlist, streamId: String, limit: Int = 6): List<EpgEntry> = withContext(Dispatchers.IO) {
         if (streamId.isBlank()) return@withContext emptyList()
-        val obj = httpObject(xtreamApi(pl, "get_short_epg", "&stream_id=${enc(streamId)}&limit=$limit"))
+        val key = "short:" + pl.id + ":" + streamId
+        epgCacheGet(key)?.let { return@withContext it }
+        val obj = try { httpObject(xtreamApi(pl, "get_short_epg", "&stream_id=${enc(streamId)}&limit=$limit")) } catch (e: Exception) { JSONObject() }
         val arr = obj.optJSONArray("epg_listings") ?: obj.optJSONArray("data") ?: JSONArray()
         val out = ArrayList<EpgEntry>()
         for (i in 0 until arr.length()) {
@@ -970,10 +972,27 @@ object Api {
             }
             if (title.isNotBlank() || desc.isNotBlank()) out.add(EpgEntry(title.ifBlank { "Programme" }, time, desc))
         }
+        if (out.isNotEmpty()) epgCachePut(key, out)
         out
     }
 
-    private val epgCache = ConcurrentHashMap<String, List<EpgEntry>>()
+    // Cache EPG : clé → (timestamp fetch, données). Expiration 60 min.
+    // Utilisé par xtreamFullEpg, stalkerShortEpg et xtreamShortEpg pour éviter
+    // de relancer des requêtes réseau à chaque bind de cellule RecyclerView.
+    private data class EpgCacheEntry(val fetchedAt: Long, val data: List<EpgEntry>)
+    private val epgCache = ConcurrentHashMap<String, EpgCacheEntry>()
+    private val EPG_CACHE_TTL_MS = 60L * 60L * 1000L // 60 minutes
+
+    private fun epgCacheGet(key: String): List<EpgEntry>? {
+        val e = epgCache[key] ?: return null
+        if (System.currentTimeMillis() - e.fetchedAt > EPG_CACHE_TTL_MS) { epgCache.remove(key); return null }
+        return e.data
+    }
+    private fun epgCachePut(key: String, data: List<EpgEntry>) {
+        epgCache[key] = EpgCacheEntry(System.currentTimeMillis(), data)
+    }
+    /** Vide le cache EPG (appelé lors du changement de liste ou du rafraîchissement manuel). */
+    fun clearEpgCache() { epgCache.clear() }
 
     private fun fmtClock(ms: Long): String {
         if (ms <= 0L) return ""
@@ -986,7 +1005,7 @@ object Api {
     suspend fun xtreamFullEpg(pl: Playlist, streamId: String): List<EpgEntry> = withContext(Dispatchers.IO) {
         if (streamId.isBlank()) return@withContext emptyList()
         val key = pl.id + ":" + streamId
-        epgCache[key]?.let { return@withContext it }
+        epgCacheGet(key)?.let { return@withContext it }
         val obj = try { httpObject(xtreamApi(pl, "get_simple_data_table", "&stream_id=" + enc(streamId))) } catch (e: Exception) { JSONObject() }
         val arr = obj.optJSONArray("epg_listings") ?: obj.optJSONArray("data") ?: JSONArray()
         val now = System.currentTimeMillis()
@@ -1008,7 +1027,7 @@ object Api {
         }
         val upcoming = out.filter { it.endMs == 0L || it.endMs >= now - 1800000L }
         val result = if (upcoming.isNotEmpty()) upcoming else out
-        epgCache[key] = result
+        epgCachePut(key, result)
         result
     }
 
@@ -1018,7 +1037,7 @@ object Api {
     suspend fun stalkerShortEpg(pl: Playlist, chId: String): List<EpgEntry> = withContext(Dispatchers.IO) {
         if (chId.isBlank()) return@withContext emptyList()
         val key = "stalker:" + pl.id + ":" + chId
-        epgCache[key]?.let { return@withContext it }
+        epgCacheGet(key)?.let { return@withContext it }
         val portal = ensureStalker(pl) ?: return@withContext emptyList()
         val txt = stbCall(pl, portal, "type=itv&action=get_short_epg&ch_id=${enc(chId)}&size=10&JsHttpRequest=1-xml")
         val out = ArrayList<EpgEntry>()
@@ -1052,7 +1071,7 @@ object Api {
                 out.add(EpgEntry(title, time, desc, nowFlag, startTs, stopTs))
             }
         } catch (e: Exception) {}
-        if (out.isNotEmpty()) epgCache[key] = out
+        if (out.isNotEmpty()) epgCachePut(key, out)
         out
     }
 
