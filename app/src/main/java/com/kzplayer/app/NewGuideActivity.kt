@@ -481,8 +481,8 @@ open class NewGuideActivity : NtBase() {
                     notifyItemRangeInserted(oldSize, added)
                 }
             } else {
-                data.clear(); data.addAll(list); notifyDataSetChanged()
                 data.clear(); data.addAll(list); epgFetching.clear(); notifyDataSetChanged()
+            }
         }
         inner class VH(val v: View) : RecyclerView.ViewHolder(v) {
             val logo: ImageView = v.findViewById(R.id.logoIv)
