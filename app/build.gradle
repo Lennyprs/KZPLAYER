@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
 }
@@ -29,7 +29,7 @@ android {
             vcCode = runNum + 400
         }
         versionCode vcCode
-        versionName "3.8.0"
+        versionName "3.8.2"
     }
 
     buildFeatures { buildConfig true }
