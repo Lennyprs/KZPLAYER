@@ -1,4 +1,4 @@
-﻿package com.kzplayer.app
+package com.kzplayer.app
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -681,9 +681,23 @@ object Api {
                     else Pair(PlaylistHealth.OK, "")
                 }
                 "stalker" -> {
-                    val cats = stalkerCategories(pl, "live")
-                    if (cats.isEmpty()) Pair(PlaylistHealth.UNKNOWN, "Portail temporairement indisponible")
-                    else Pair(PlaylistHealth.OK, "")
+                    val portal = ensureStalker(pl)
+                    if (portal == null) {
+                        Pair(PlaylistHealth.UNKNOWN, "Portail temporairement indisponible")
+                    } else {
+                        val expMs = stalkerAccountInfo(pl, portal)
+                        val cats = stalkerCategories(pl, "live")
+                        val now = System.currentTimeMillis()
+                        val date = if (expMs != null && expMs > 0L) frDate(expMs) else ""
+                        when {
+                            expMs != null && expMs in 1 until now ->
+                                Pair(PlaylistHealth.EXPIRED, if (date.isBlank()) "Confirmé par le fournisseur" else "Fin : " + date)
+                            cats.isEmpty() ->
+                                Pair(PlaylistHealth.UNKNOWN, "Vérification temporairement impossible")
+                            else ->
+                                Pair(PlaylistHealth.OK, if (date.isBlank()) "" else "Jusqu au " + date)
+                        }
+                    }
                 }
                 else -> {
                     val url = pl.serverUrl.trimEnd(chr47()) + "/player_api.php?username=" + enc(pl.username) + "&password=" + enc(pl.password)
@@ -1092,8 +1106,9 @@ object Api {
 
     // ---------------- STALKER / MAG PORTAL ----------------
     // Emule un boitier MAG (handshake -> token -> listes -> create_link).
-    private const val STB_UA =
-        "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 2 rev: 250 Safari/533.3"
+    // v6.22.4 (MegaMac) : User-Agent firmware MAG200 officiel, identique sur toutes les requetes
+    const val STB_UA =
+        "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
 
     private data class StbProfile(val model: String, val ua: String, val imageVersion: String, val ver: String)
     private val STB_PROFILES = listOf(
@@ -1223,51 +1238,86 @@ object Api {
     private fun stbSerial(pl: Playlist): String = md5Hex(pl.mac).uppercase().substring(0, 13)
     private fun stbDeviceId(pl: Playlist): String = sha256Hex(pl.mac.uppercase()).uppercase()
 
-    private fun stbCookie(pl: Playlist): String =
-        if (stbCompat)
-            // Format releve sur un boitier MAG250 reel : mac non encodee, serial present,
-            // fuseau en clair. Utilise uniquement en mode compatibilite.
-            "mac=" + pl.mac + "; serial=" + pl.stalkerSn.ifBlank { stbSerial(pl) } +
-                "; stb_lang=en; timezone=Europe/Paris"
-        else
-            "mac=" + enc(pl.mac) + "; stb_lang=en; timezone=Europe%2FParis"
+    var lastStalkerExpMs: Long = 0L
 
-    // En-tetes MAG a renvoyer au lecteur pour lire un flux stalker.
-    // Sans eux, nginx ferme la connexion -> HTTP 444. A appeler apres create_link (token deja obtenu).
-    private fun buildStalkerHeaders(pl: Playlist): Map<String, String> {
+    // v6.22.4 (MegaMac) : Gestion des cookies Stalker
+    // - Handshake (avant token) : mac + stb_lang=en + timezone=Europe/Paris (non encode)
+    // - Requetes courantes (dual-pass) : mac + serial + stb_lang + timezone + token={token};
+    // - Account info : identique mais sans point-virgule final apres le token
+    private fun stbCookie(pl: Playlist, isAccountInfo: Boolean = false): String {
+        val mac = pl.mac.trim()
+        val sn = pl.stalkerSn.ifBlank { stbSerial(pl) }
+        val tok = stalkerToken
+        return if (tok.isNullOrBlank()) {
+            "mac=$mac; stb_lang=en; timezone=Europe/Paris"
+        } else if (isAccountInfo) {
+            "mac=$mac; serial=$sn; stb_lang=en; timezone=Europe/Paris; token=$tok"
+        } else {
+            "mac=$mac; serial=$sn; stb_lang=en; timezone=Europe/Paris; token=$tok;"
+        }
+    }
+
+    // v6.22.4 (MegaMac) : En-tetes MAG stricts
+    // - User-Agent MAG200 + X-User-Agent
+    // - Retrait de Accept: */* et Accept-Language sur tous les endpoints Stalker
+    // - X-Device-Id (SHA256 du MAC) reintroduit sur account_info UNIQUEMENT
+    // - Pragma / Cache-Control sur all_channels
+    private fun buildStalkerHeaders(
+        pl: Playlist,
+        isAccountInfo: Boolean = false,
+        isChannelList: Boolean = false
+    ): Map<String, String> {
         val m = LinkedHashMap<String, String>()
-        // En compat, le flux est refuse avec le User-Agent MAG : on utilise celui
-        // releve dans la capture reelle.
         m["User-Agent"] = if (stbCompat) "IPTVSmartersPro" else currentStbProfile.ua
-        m["Cookie"] = stbCookie(pl)
         m["X-User-Agent"] = "Model: ${currentStbProfile.model}; Link: WiFi"
-        m["Referer"] = "${pl.serverUrl}/c/"
+        m["Connection"] = "Keep-Alive"
+        m["Accept-Encoding"] = "gzip"
+        m["Cookie"] = stbCookie(pl, isAccountInfo)
+        val refererBase = pl.serverUrl.trimEnd('/')
+        m["Referer"] = "$refererBase/c/"
         val t = stalkerToken
         if (!t.isNullOrBlank()) m["Authorization"] = "Bearer $t"
+        if (isAccountInfo) {
+            val did = pl.stalkerDeviceId.ifBlank { stbDeviceId(pl) }
+            m["X-Device-Id"] = did
+        }
+        if (isChannelList) {
+            m["Pragma"] = "no-cache"
+            m["Cache-Control"] = "no-cache"
+        }
         m.putAll(stbCompatExtras(pl))
         return m
     }
 
-    fun stalkerHeaders(pl:Playlist):Map<String,String> = portalHeaders[portalOwner(pl)]?.toMap()
-        ?: buildStalkerHeaders(pl).filterKeys {it!="Authorization"}
+    fun stalkerHeaders(pl: Playlist): Map<String, String> = portalHeaders[portalOwner(pl)]?.toMap()
+        ?: buildStalkerHeaders(pl).filterKeys { it != "Authorization" }
 
-    private fun stbCall(pl: Playlist, portal: String, query: String): String {
-        val prepared=synchronized(this) {
-            val owner=portalOwner(pl)
-            val handshake=query.contains("action=handshake")
-            if(!handshake && portalOwnerKey!=owner) {
-                if(ensureStalker(pl)==null)throw java.io.IOException("AUTH_PORTAIL")
+    private fun stbCall(
+        pl: Playlist,
+        portal: String,
+        query: String,
+        isAccountInfo: Boolean = false,
+        isChannelList: Boolean = false
+    ): String {
+        val prepared = synchronized(this) {
+            val owner = portalOwner(pl)
+            val handshake = query.contains("action=handshake")
+            if (!handshake && portalOwnerKey != owner) {
+                if (ensureStalker(pl) == null) throw java.io.IOException("AUTH_PORTAIL")
             }
-            (if(handshake) portal else stalkerBase?:portal) to buildStalkerHeaders(pl).toMap()
+            (if (handshake) portal else stalkerBase ?: portal) to buildStalkerHeaders(pl, isAccountInfo, isChannelList).toMap()
         }
-        val actualPortal=prepared.first
-        val requestHeaders=prepared.second
+        val actualPortal = prepared.first
+        val requestHeaders = prepared.second
 
-        fun applyStbHeaders(b:Request.Builder):Request.Builder {
-            requestHeaders.forEach {(k,v)->b.header(k,v)}
-            // Same control-request identity as the original working portal calls.
-            b.header("User-Agent",if(requestHeaders["User-Agent"]=="IPTVSmartersPro") "Mozilla/5.0 (QtEmbedded; Linux)" else requestHeaders["User-Agent"]?:STB_UA)
-            b.header("Accept","*/*")
+        fun applyStbHeaders(b: Request.Builder): Request.Builder {
+            requestHeaders.forEach { (k, v) -> b.header(k, v) }
+            b.header(
+                "User-Agent",
+                if (requestHeaders["User-Agent"] == "IPTVSmartersPro") "Mozilla/5.0 (QtEmbedded; Linux)"
+                else requestHeaders["User-Agent"] ?: STB_UA
+            )
+            // v6.22.4 : Pas d'en-tete Accept ni Accept-Language sur les requetes Stalker (REQ 01 a 11)
             return b
         }
 
@@ -1278,7 +1328,7 @@ object Api {
 
         fun callGet(): String {
             val b = applyStbHeaders(Request.Builder().url("$actualPortal?$query"))
-            return try { portalText(b.build(),pl) } catch (e: Exception) { if(searchPortalCall.get()!=null)throw e else "" }
+            return try { portalText(b.build(), pl) } catch (e: Exception) { if (searchPortalCall.get() != null) throw e else "" }
         }
 
         fun callPost(): String {
@@ -1288,12 +1338,10 @@ object Api {
                 val i = part.indexOf('=')
                 val k = if (i >= 0) part.substring(0, i) else part
                 val v = if (i >= 0) part.substring(i + 1) else ""
-                // La query est deja encodee par enc(...). addEncoded evite de double-encoder
-                // cmd, ver, metrics, etc. Certains portails Stalker acceptent uniquement POST.
                 form.addEncoded(k, v)
             }
             val b = applyStbHeaders(Request.Builder().url(actualPortal).post(form.build()))
-            return try { portalText(b.build(),pl) } catch (e: Exception) { if(searchPortalCall.get()!=null)throw e else "" }
+            return try { portalText(b.build(), pl) } catch (e: Exception) { if (searchPortalCall.get() != null) throw e else "" }
         }
 
         val getTxt = callGet()
@@ -1304,11 +1352,9 @@ object Api {
     }
 
     private fun stalkerHandshake(pl: Playlist): Boolean {
-        // Mode historique en premier (aucun changement pour les serveurs qui marchent).
         stbCompat = stbCompatServers.contains(stbKey(pl.serverUrl))
         if (stalkerHandshakePass(pl)) return true
         if (stbCompat) { stbCompat = false; return false }
-        // Repli unique : profil MAG250 strict releve sur la capture HTTP reelle.
         stbCompat = true
         stalkerToken = null
         stalkerBase = null
@@ -1325,14 +1371,17 @@ object Api {
         val tried = StringBuilder()
         val candidates = stalkerPortalCandidates(pl.serverUrl)
         for (portal in candidates) {
-            val txt = stbCall(pl, portal, "type=stb&action=handshake&token=&JsHttpRequest=1-xml")
+            // v6.22.4 REQ 01 : URL figee firmware, sans prehash=0, token= vide
+            val txt = stbCall(pl, portal, "type=stb&action=handshake&JsHttpRequest=1-xml&token=")
             val tok = try { JSONObject(txt).optJSONObject("js")?.optString("token") } catch (e: Exception) { null }
             tried.append("\n- ").append(portal).append(" -> ").append(if (!tok.isNullOrBlank()) "TOKEN OK" else txt.take(120))
             if (!tok.isNullOrBlank()) {
                 stalkerToken = tok
                 stalkerBase = portal
+                // v6.22.4 REQ 02 : Get Profile minimal
                 stalkerGetProfile(pl, portal)
-                if (hasCustomStalkerProfile(pl)) stalkerAccountInfo(pl, portal)
+                // v6.22.4 REQ 03 : Account Info (phone expiration)
+                stalkerAccountInfo(pl, portal)
                 lastStalkerLog = "Stalker OK\nPortail: $portal\nProfil: ${currentStbProfile.model}\nMAC: ${pl.mac}\nSN: ${pl.stalkerSn.ifBlank { "auto" }}"
                 return true
             }
@@ -1345,15 +1394,10 @@ object Api {
         val bases = LinkedHashSet<String>()
         val base = serverUrl.trim().trimEnd('/')
         if (base.isNotBlank()) bases.add(base)
-        // Certains portails refusent ou routent mal quand :80 est present dans l'URL,
-        // alors que le meme domaine sans port marche.
         if (base.endsWith(":80", true)) bases.add(base.removeSuffix(":80"))
 
         val out = LinkedHashSet<String>()
         for (b in bases) {
-            // Les formats Stalker/MAG les plus courants. On garde portal.php en premier
-            // pour les serveurs type 2.900900.me, puis on essaie les variantes sans casser
-            // les anciens serveurs.
             out.add("$b/portal.php")
             out.add("$b/stalker_portal/server/load.php")
             out.add("$b/stalker_portal/portal.php")
@@ -1361,15 +1405,24 @@ object Api {
             out.add("$b/c/portal.php")
             out.add("$b/c/server/load.php")
             out.add("$b/stalker_portal/c/portal.php")
-            // Secours : certains players appellent directement la racine :
-            // http://serveur/?type=stb&action=handshake...
             out.add(b)
         }
         return out.toList()
     }
 
-    private fun stalkerAccountInfo(pl: Playlist, portal: String) {
-        stbCall(pl, portal, "type=account_info&action=get_main_info&JsHttpRequest=1-xml")
+    // v6.22.4 REQ 03 : Account Info avec X-Device-Id (SHA256 du MAC) pour recuperer phone (expiration Unix)
+    fun stalkerAccountInfo(pl: Playlist, portal: String): Long? {
+        val q = "type=account_info&action=get_main_info&JsHttpRequest=1-xml"
+        val txt = stbCall(pl, portal, q, isAccountInfo = true)
+        return try {
+            val phone = JSONObject(txt).optJSONObject("js")?.optString("phone")?.trim()
+            val expSec = phone?.toLongOrNull()
+            if (expSec != null && expSec > 0L) {
+                val ms = expSec * 1000L
+                lastStalkerExpMs = ms
+                ms
+            } else null
+        } catch (e: Exception) { null }
     }
 
     private fun hasCustomStalkerProfile(pl: Playlist): Boolean =
@@ -1385,81 +1438,12 @@ object Api {
         pl.stalkerImageVersion.isNotBlank() ||
         pl.stalkerVer.isNotBlank()
 
-    // Profil complet facon MAG250 : indispensable sur les portails "proteges".
-    // Certains serveurs valident un profil exact fourni par le fournisseur/SFVipPlayer :
-    // sn + device_id + device_id2 + signature + metrics + hw_version_2 + timestamp + prehash.
+    // v6.22.4 REQ 02 : Get Profile - mode minimal uniquement (sn + auth_second_step=1).
+    // Les 20 parametres MAG250 ("full") sont retires conformement a la specification MegaMac v6.22.4.
     private fun stalkerGetProfile(pl: Playlist, portal: String) {
-        if (!hasCustomStalkerProfile(pl)) {
-            // Mode historique stable pour les Stalker classiques : ne pas leur envoyer
-            // les champs speciaux ajoutes pour les portails avec SN obligatoire.
-            val sn = stbSerial(pl)
-            val did = stbDeviceId(pl)
-            val sig = sha256Hex((pl.mac + sn).uppercase()).uppercase()
-            val ver = enc(currentStbProfile.ver)
-            val metrics = enc("{\"mac\":\"${pl.mac}\",\"sn\":\"$sn\",\"model\":\"${currentStbProfile.model}\",\"type\":\"STB\",\"uid\":\"$did\"}")
-            val q = if (stbCompat) {
-                // Premier get_profile, copie exacte de la capture d un MAG250 :
-                // pas de hd=1, api_signature 263, timestamp, hw_version_2, metrics avec random.
-                val metricsCompat = enc(
-                    "{\"mac\":\"${pl.mac}\",\"sn\":\"$sn\",\"model\":\"${currentStbProfile.model}\"," +
-                        "\"type\":\"STB\",\"uid\":\"\",\"random\":\"${(100000..999999).random()}\"}"
-                )
-                "type=stb&action=get_profile&ver=$ver" +
-                    "&num_banks=2&sn=$sn&stb_type=${currentStbProfile.model}&image_version=${currentStbProfile.imageVersion}" +
-                    "&video_out=hdmi&device_id=$did&device_id2=$did&signature=$sig" +
-                    "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0&client_type=STB" +
-                    "&hw_version_2=334&timestamp=${System.currentTimeMillis() / 1000}" +
-                    "&api_signature=263&metrics=$metricsCompat&JsHttpRequest=1-xml"
-            } else {
-                "type=stb&action=get_profile&hd=1&ver=$ver" +
-                    "&num_banks=2&sn=$sn&stb_type=${currentStbProfile.model}&client_type=STB&image_version=${currentStbProfile.imageVersion}" +
-                    "&video_out=hdmi&device_id=$did&device_id2=$did&signature=$sig" +
-                    "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0&metrics=$metrics" +
-                    "&JsHttpRequest=1-xml"
-            }
-            stbCall(pl, portal, q)
-            // Deuxieme get_profile allege : indispensable sur ces portails, ils ne
-            // valident la session qu apres ce second appel.
-            if (stbCompat) {
-                stbCall(pl, portal, "type=stb&action=get_profile&sn=$sn&auth_second_step=1&JsHttpRequest=1-xml")
-            }
-            return
-        }
-
-        fun qv(v: String): String {
-            if (v.isBlank()) return ""
-            // Si le backend stocke deja la valeur encodee depuis la capture, on ne la double-encode pas.
-            return if (v.contains("%")) v else enc(v)
-        }
-
         val sn = pl.stalkerSn.ifBlank { stbSerial(pl) }
-        val did = pl.stalkerDeviceId.ifBlank { stbDeviceId(pl) }
-        val did2 = pl.stalkerDeviceId2.ifBlank { did }
-        val sig = pl.stalkerSignature.ifBlank { sha256Hex((pl.mac + sn).uppercase()).uppercase() }
-        val imageVersion = pl.stalkerImageVersion.ifBlank { currentStbProfile.imageVersion }
-        val verRaw = pl.stalkerVer.ifBlank {
-            currentStbProfile.ver
-        }
-        val metricsRaw = pl.stalkerMetrics.ifBlank {
-            "{\"mac\":\"${pl.mac}\",\"sn\":\"$sn\",\"model\":\"${currentStbProfile.model}\",\"type\":\"STB\",\"uid\":\"$did\"}"
-        }
-
-        var q = "type=stb&action=get_profile&hd=1&ver=${qv(verRaw)}" +
-            "&num_banks=2&sn=${qv(sn)}&stb_type=${currentStbProfile.model}&client_type=STB&image_version=${qv(imageVersion)}" +
-            "&video_out=hdmi&device_id=${qv(did)}&device_id2=${qv(did2)}&signature=${qv(sig)}" +
-            "&auth_second_step=1&hw_version=1.7-BD-00&not_valid_token=0&metrics=${qv(metricsRaw)}"
-
-        if (pl.stalkerHwVersion2.isNotBlank()) q += "&hw_version_2=${qv(pl.stalkerHwVersion2)}"
-        if (pl.stalkerTimestamp.isNotBlank()) q += "&timestamp=${qv(pl.stalkerTimestamp)}"
-        q += "&api_signature=${qv(pl.stalkerApiSignature.ifBlank { if (stbCompat) "263" else "262" })}"
-        if (pl.stalkerPrehash.isNotBlank()) q += "&prehash=${qv(pl.stalkerPrehash)}"
-        q += "&JsHttpRequest=1-xml"
-
+        val q = "type=stb&action=get_profile&JsHttpRequest=1-xml&sn=$sn&auth_second_step=1"
         stbCall(pl, portal, q)
-        // Second get_profile allege (mode compatibilite uniquement).
-        if (stbCompat) {
-            stbCall(pl, portal, "type=stb&action=get_profile&sn=${qv(sn)}&auth_second_step=1&JsHttpRequest=1-xml")
-        }
     }
 
     @Synchronized private fun ensureStalker(pl: Playlist): String? {
@@ -1607,7 +1591,8 @@ object Api {
     }
 
     private fun fetchStalkerAllChannels(pl: Playlist, portal: String, sel: String): List<Item> {
-        val txt = stbCall(pl, portal, "type=itv&action=get_all_channels&JsHttpRequest=1-xml")
+        // v6.22.4 REQ 04 : get_all_channels avec Pragma/Cache-Control no-cache
+        val txt = stbCall(pl, portal, "type=itv&action=get_all_channels&JsHttpRequest=1-xml", isChannelList = true)
         val out = ArrayList<Item>()
         try {
             val root = JSONObject(txt)
@@ -1741,7 +1726,10 @@ object Api {
 
         val portal = ensureStalker(pl) ?: return@withContext null
         val cmdForCreateLink = if (isLive && hasPlayToken) stripLivePlayToken(realCmd) else realCmd
-        val txt = stbCall(pl, portal, "type=$type&action=create_link&cmd=${enc(cmdForCreateLink)}$extra&JsHttpRequest=1-xml")
+        val seriesVal = if (marker >= 0) enc(cmd.substring(marker + 1)) else ""
+        // v6.22.4 REQ 05 : create_link parametres complets (forced_storage, disable_ad, download, force_ch_link_check)
+        val q = "type=$type&action=create_link&cmd=${enc(cmdForCreateLink)}&series=$seriesVal&forced_storage=0&disable_ad=0&download=0&force_ch_link_check=0&JsHttpRequest=1-xml"
+        val txt = stbCall(pl, portal, q)
         val raw = try { JSONObject(txt).optJSONObject("js")?.optString("cmd") } catch (e: Exception) { null }
         val cleaned = if (raw.isNullOrBlank()) null else cleanCmdUrl(raw, pl)
         val repaired = if (cleaned.isNullOrBlank()) null else repairEmptyLiveStream(cleaned, directInCmd)
@@ -1954,17 +1942,66 @@ object Api {
         return out
     }
 
+    // v6.22.4 (MegaMac) : Nettoyage renforce des URL cmd renvoyees par les portails
     private fun cleanCmdUrl(cmd: String, pl: Playlist? = null): String {
-        val c = cmd.trim()
-        // 1) cas courant : "ffmpeg http://..." -> on prend le jeton qui commence par http
+        var c = cmd.trim().replace("\\/", "/")
+        if (c.startsWith("ffmpeg ", ignoreCase = true)) c = c.substring(7).trim()
+        if (c.startsWith("auto ", ignoreCase = true)) c = c.substring(5).trim()
+
+        // 1) Relatif //domain/path
+        if (c.startsWith("//")) {
+            val scheme = if (pl?.serverUrl?.startsWith("https://", ignoreCase = true) == true) "https:" else "http:"
+            c = scheme + c
+        }
+        // 2) cas pvr://
+        if (c.startsWith("pvr://", ignoreCase = true)) {
+            val sub = c.indexOf("http", ignoreCase = true)
+            if (sub >= 0) c = c.substring(sub).trim()
+        }
         val tokens = c.split(" ", "\t").filter { it.isNotBlank() }
-        tokens.lastOrNull { it.startsWith("http", true) }?.let { return it.trim() }
-        // 2) un http present mais colle a autre chose
-        val idx = c.indexOf("http", ignoreCase = true)
-        if (idx >= 0) return c.substring(idx).substringBefore(" ").trim()
-        // 3) chemin relatif renvoye par le portail -> on prefixe le serveur
+        tokens.lastOrNull { it.startsWith("http://", true) || it.startsWith("https://", true) }?.let { return it.trim() }
+        val idx = c.indexOf("http://", ignoreCase = true)
+        val idxS = c.indexOf("https://", ignoreCase = true)
+        val bestIdx = when {
+            idx >= 0 && idxS >= 0 -> Math.min(idx, idxS)
+            idx >= 0 -> idx
+            idxS >= 0 -> idxS
+            else -> -1
+        }
+        if (bestIdx >= 0) return c.substring(bestIdx).substringBefore(" ").trim()
         if (pl != null && c.startsWith("/")) return pl.serverUrl.trimEnd('/') + c
         return c
+    }
+
+    // v6.22.4 REQ 12 : tentative de conversion MAC vers identifiants Xtream (player_api.php?action=login&mac=...)
+    suspend fun tryMacToXtream(pl: Playlist): Pair<String, String>? = withContext(Dispatchers.IO) {
+        if (pl.mac.isBlank()) return@withContext null
+        try {
+            val base = pl.serverUrl.trimEnd('/')
+            val macEnc = enc(pl.mac)
+            val url = "$base/player_api.php?action=login&mac=$macEnc"
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", STB_UA)
+                .header("X-User-Agent", "Model: MAG250; Link: WiFi")
+                .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                .header("Referer", "$base/c/")
+                .header("Cookie", "mac=${pl.mac}; stb_lang=en; timezone=Europe/Paris;")
+                .build()
+            val (code, txt) = callText(req)
+            if (code in 200..299 && txt.isNotBlank()) {
+                val obj = JSONObject(txt)
+                val uinfo = obj.optJSONObject("user_info")
+                if (uinfo != null && (uinfo.optInt("auth", 0) == 1 || uinfo.optString("status").equals("Active", true))) {
+                    val u = uinfo.optString("username")
+                    val p = uinfo.optString("password")
+                    if (u.isNotBlank() && p.isNotBlank()) {
+                        return@withContext Pair(u, p)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        null
     }
 
     // ---------------- M3U ----------------

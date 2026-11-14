@@ -3,7 +3,7 @@ package com.kzplayer.app;
 public final class VodPlaybackPolicy {
  private VodPlaybackPolicy(){}
  public static boolean asynchronousVideo(int sdk,String decoder,String mime,boolean protectedContent){
-  return sdk>=23&&!protectedContent&&"OMX.allwinner.video.decoder.hevc".equalsIgnoreCase(decoder)&&"video/hevc".equalsIgnoreCase(mime);
+  return sdk>=23&&!protectedContent&&"OMX.allwinner.video.decoder.hevc".equalsIgnoreCase(decoder)&&("video/hevc".equalsIgnoreCase(mime)||"video/dolby-vision".equalsIgnoreCase(mime));
  }
  public static boolean decoderFailure(String error,boolean video){
   return video&&("ERROR_CODE_DECODING_FAILED".equals(error)||"ERROR_CODE_DECODER_INIT_FAILED".equals(error));

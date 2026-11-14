@@ -306,7 +306,7 @@ class PlayerActivity : AppCompatActivity() {
         val plCur = Session.current
         val streamUa = if (plCur != null && plCur.type == "stalker") {
             Api.stalkerHeaders(plCur)["User-Agent"]?.takeIf { it.isNotBlank() }
-                ?: "VLC/3.0.20 LibVLC/3.0.20"
+                ?: Api.STB_UA
         } else if (isVod) {
             UAS_VOD[vodUaIdx.coerceIn(0, UAS_VOD.size - 1)]
         } else {
@@ -320,7 +320,7 @@ class PlayerActivity : AppCompatActivity() {
                     for ((k, v) in Api.stalkerHeaders(plCur)) {
                         if (!k.equals("User-Agent", true) && v.isNotBlank()) h[k] = v
                     }
-                    h["Accept"] = "*/*"
+                    // MegaMac v6.22.4 : Pas d'en-tete Accept sur les flux CDN/Stalker
                     h
                 } catch (e: Throwable) { emptyMap() }
             } else emptyMap()
@@ -345,25 +345,43 @@ class PlayerActivity : AppCompatActivity() {
         val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(sourceFactory)
             .setLoadErrorHandlingPolicy(errPolicy)
 
-        // ---- SOLUTION FINALE : INTERDIRE LE DÉCODEUR ALLWINNER ----
         vodCodecFactory = null 
         val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(
                 androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
             )
-            .setMediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
-                val infos = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
-                    .getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
-                
-                // On bannit le décodeur Allwinner pour le H265 (HDR/DV)
-                if (mimeType == androidx.media3.common.MimeTypes.VIDEO_H265) {
-                    infos.filter { !it.name.contains("allwinner", ignoreCase = true) }
-                } else {
-                    infos
+
+        // v3.8.4 : Mode asynchrone MediaCodec pour la VOD (4K / UHD / HDR / Dolby Vision / IMAX).
+        // Le mode asynchrone (utilisé par TiviMate sur chipset Allwinner) évite les blocages
+        // de file dequeueOutputBuffer et les débordements de tampons du décodeur matériel.
+        if (isVod) {
+            renderersFactory.forceEnableMediaCodecAsynchronousQueueing()
+        }
+
+        renderersFactory.setMediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
+            val defaultInfos = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+                .getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
+
+            // Prise en charge des contenus Dolby Vision sans décodeur DV dédié (X96Q, etc.) :
+            // Si aucun décodeur DV dédié n'est présent, on bascule immédiatement sur les décodeurs
+            // HEVC matériels (compatibles base layer HDR10/SDR).
+            if (mimeType == androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION) {
+                val hevcInfos = try {
+                    androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+                        .getDecoderInfos(
+                            androidx.media3.common.MimeTypes.VIDEO_H265,
+                            requiresSecureDecoder,
+                            requiresTunnelingDecoder
+                        )
+                } catch (_: Throwable) {
+                    emptyList()
                 }
+                if (defaultInfos.isEmpty()) hevcInfos else defaultInfos + hevcInfos
+            } else {
+                defaultInfos
             }
-        // -----------------------------------------------------------
+        }
 
         if (isReplayMode && intent.getBooleanExtra("replaySoftwareRetry", false)) {
             renderersFactory.setMediaCodecSelector { mime, secure, tunneled ->
@@ -489,7 +507,7 @@ class PlayerActivity : AppCompatActivity() {
                     val fmt=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat?:p.videoFormat
                     val video=androidx.media3.common.MimeTypes.getTrackType(fmt?.sampleMimeType)==androidx.media3.common.C.TRACK_TYPE_VIDEO
                     val codecFailure=VodPlaybackPolicy.decoderFailure(error.errorCodeName,video)
-                    val target=vodCodecFactory?.lastVideoMode=="async-allwinner-hevc"
+                    val target=true
                     if(codecFailure){
                         if(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)&&vodCodecRecovery.claim(true,target)){
                             val oldEntry=if(!didRestorePosition)WatchHistory.all(this@PlayerActivity).firstOrNull {it.title==watchTitle&&it.kind==watchKind&&it.playlistId==playbackOwnerId} else null
@@ -598,7 +616,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun showVodFailure(error:PlaybackException,p:ExoPlayer){
         recoveryHandler.removeCallbacks(startupWatchdog)
         val fmt=(error as? androidx.media3.exoplayer.ExoPlaybackException)?.rendererFormat?:p.videoFormat
-        val mode=vodCodecFactory?.lastVideoMode?:"standard-synchronous"
+        val mode=if(isVod)"async-hardware" else "standard-synchronous"
         val first=intent.getStringExtra("vodFirstCodecFailure").orEmpty()
         val firstSafe=if(first=="ERROR_CODE_DECODING_FAILED"||first=="ERROR_CODE_DECODER_INIT_FAILED")first else "aucune"
         val diag="KZ PLAYER : ${BuildConfig.VERSION_NAME}\nVideo : $mode\nRecuperation codec : ${if(intent.getBooleanExtra("vodCodecRecoveryUsed",false))"1/1" else "0/1"}\nPremiere erreur codec : $firstSafe\nFormat : ${fmt?.sampleMimeType.orEmpty()} ${fmt?.codecs.orEmpty()} ${fmt?.width?:0} x ${fmt?.height?:0}\nDecodeur : ${activeVideoDecoderName.ifBlank {"non initialise"}}\n1080p : ${if(compatibleVideoSelected)"piste compatible du meme contenu selectionnee" else "aucune substitution ni conversion forcee"}\n${PlaybackFailureDetails.describe(error)}"
