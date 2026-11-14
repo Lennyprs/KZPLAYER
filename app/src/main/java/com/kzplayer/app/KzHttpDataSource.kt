@@ -37,10 +37,9 @@ object KzHttpDataSource {
             val f = androidx.media3.datasource.DefaultHttpDataSource.Factory()
                 .setAllowCrossProtocolRedirects(allowCrossProtocolRedirects)
                 .setUserAgent(userAgent)
-                // v389 : un serveur qui ne repond pas faisait tourner le rond de chargement
-                // sans fin. On coupe court pour pouvoir essayer une autre adresse tout seul.
-                .setConnectTimeoutMs(7000)
-                .setReadTimeoutMs(9000)
+                // v3.8.5 : Timeouts adaptés aux gros flux 4K VOD (fichiers volumineux sur CDN/disques distants)
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(25000)
             if (headers.isNotEmpty()) {
                 try { f.setDefaultRequestProperties(headers) } catch (e: Throwable) {}
             }

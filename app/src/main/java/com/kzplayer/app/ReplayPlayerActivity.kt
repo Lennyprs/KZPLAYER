@@ -451,7 +451,7 @@ class ReplayPlayerActivity : AppCompatActivity() {
             // observe sur certains boitiers avec la file asynchrone Android.
             .forceDisableMediaCodecAsynchronousQueueing()
             .setExtensionRendererMode(
-                androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+                androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
             )
 
         // V117 : un seul essai logiciel, uniquement apres une erreur codec replay.
@@ -509,14 +509,8 @@ class ReplayPlayerActivity : AppCompatActivity() {
         )
         p.volume = 1.0f
         if (isVod) {
-            // Optimisation audio VOD : si plusieurs pistes existent, ExoPlayer prefere une piste compatible
-            // avec peu de canaux (stereo) plutot qu'une piste 5.1/DTS que le boitier ne sort pas.
             var vodParams = p.trackSelectionParameters.buildUpon()
-                .setMaxAudioChannelCount(2)
-            // Series multi-langues : on selectionne automatiquement le francais quand il existe.
-            // C'est une PREFERENCE (pas une contrainte) : si le francais est absent, ExoPlayer garde
-            // la piste par defaut, donc jamais de perte de son. Codes fr / fra / fre couverts.
-            if (watchKind == "series") {
+            if (watchKind == "series" || watchKind == "movie") {
                 vodParams = vodParams.setPreferredAudioLanguages("fr", "fra", "fre")
             }
             p.trackSelectionParameters = vodParams.build()

@@ -350,7 +350,7 @@ class PlayerActivity : AppCompatActivity() {
         val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(
-                androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+                androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
             )
 
         // v3.8.4 : Mode asynchrone MediaCodec pour la VOD (4K / UHD / HDR / Dolby Vision / IMAX).
@@ -361,13 +361,17 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         renderersFactory.setMediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
-            val defaultInfos = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
-                .getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
+            val defaultInfos = try {
+                androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+                    .getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
+            } catch (_: Throwable) {
+                emptyList()
+            }
 
             // Prise en charge des contenus Dolby Vision sans décodeur DV dédié (X96Q, etc.) :
             // Si aucun décodeur DV dédié n'est présent, on bascule immédiatement sur les décodeurs
             // HEVC matériels (compatibles base layer HDR10/SDR).
-            if (mimeType == androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION) {
+            val rawList = if (mimeType == androidx.media3.common.MimeTypes.VIDEO_DOLBY_VISION) {
                 val hevcInfos = try {
                     androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
                         .getDecoderInfos(
@@ -381,6 +385,19 @@ class PlayerActivity : AppCompatActivity() {
                 if (defaultInfos.isEmpty()) hevcInfos else defaultInfos + hevcInfos
             } else {
                 defaultInfos
+            }
+
+            // v3.8.5 : PRIORITÉ ABSOLUE AU DÉCODEUR MATÉRIEL (GPU/VPU) pour tous les flux vidéo.
+            // Sur Android 10 et box Allwinner, le sélecteur Android liste parfois le décodeur
+            // logiciel (c2.android.hevc.decoder) en premier pour le HEVC standard et HDR10+.
+            // Cela provoque des saccades extrêmes (2 fps) ou un refus de démarrage 4K.
+            // En plaçant le matériel devant, OMX.allwinner.video.decoder.hevc prend la main.
+            if (mimeType.startsWith("video/")) {
+                val hw = rawList.filter { !it.softwareOnly }
+                val sw = rawList.filter { it.softwareOnly }
+                if (hw.isNotEmpty()) hw + sw else rawList
+            } else {
+                rawList
             }
         }
 
@@ -396,10 +413,11 @@ class PlayerActivity : AppCompatActivity() {
             .setMediaSourceFactory(mediaSourceFactory)
             .setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
         val loadControl = if (isVod) {
+            // v3.8.5 : Buffer VOD 4K optimisé pour box TV (évite la saturation mémoire RAM et le micro-rebuffering)
             androidx.media3.exoplayer.DefaultLoadControl.Builder()
-                .setBufferDurationsMs(8000, 60000, 1500, 3000)
-                .setPrioritizeTimeOverSizeThresholds(true)
-                .setTargetBufferBytes(androidx.media3.common.C.LENGTH_UNSET)
+                .setBufferDurationsMs(10000, 30000, 3500, 5000)
+                .setTargetBufferBytes(32 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
                 .build()
         } else {
             androidx.media3.exoplayer.DefaultLoadControl.Builder()
@@ -426,8 +444,7 @@ class PlayerActivity : AppCompatActivity() {
         p.volume = 1.0f
         if (isVod) {
             var vodParams = p.trackSelectionParameters.buildUpon()
-                .setMaxAudioChannelCount(2)
-            if (watchKind == "series") {
+            if (watchKind == "series" || watchKind == "movie") {
                 vodParams = vodParams.setPreferredAudioLanguages("fr", "fra", "fre")
             }
             p.trackSelectionParameters = vodParams.build()
