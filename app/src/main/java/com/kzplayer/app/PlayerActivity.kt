@@ -125,6 +125,7 @@ class PlayerActivity : AppCompatActivity() {
     private var watchSourceContainerExt: String = ""
     private var didRestorePosition: Boolean = false
     private var isLiveMode: Boolean = false
+    private var isVod: Boolean = false
     private var currentSubUrl: String? = null
     private var currentSubLang: String = ""
     private var currentSubFormat: String = "srt"
@@ -279,7 +280,7 @@ class PlayerActivity : AppCompatActivity() {
         val looksVod = lowerUrl.contains("/series/") || lowerUrl.contains("/movie/") ||
             pathOnly.endsWith(".mp4") || pathOnly.endsWith(".mkv") || pathOnly.endsWith(".avi") ||
             pathOnly.endsWith(".mov") || pathOnly.endsWith(".flv")
-        val isVod = mode == "vod" || looksVod
+        isVod = mode == "vod" || looksVod
         isLiveMode = !isVod
         if (isLiveMode) {
             playerView.useController = false
